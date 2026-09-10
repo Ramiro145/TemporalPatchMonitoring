@@ -1,8 +1,8 @@
 namespace Contracts.Domain;
 
 /// <summary>
-/// Estado de una ejecución de workflow de Temporal, en la forma que el dominio necesita.
-/// No depende de <c>Temporalio</c>: el spec 03 mapea el enum del SDK a este.
+/// Estado de una ejecución de workflow, en la forma que el dominio necesita. No depende
+/// del SDK: el spec 03 mapea el enum del cliente a este.
 /// </summary>
 public enum ExecutionStatus
 {

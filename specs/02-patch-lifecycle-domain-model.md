@@ -1,6 +1,6 @@
 # 02 - Modelo de dominio del ciclo de vida de un patch
 
-**Estado:** Aprobado
+**Estado:** Implementado
 **Depende de:** [01-solution-scaffolding-docker-stack.md](01-solution-scaffolding-docker-stack.md)
 **Fecha:** 2026-09-10
 
@@ -283,30 +283,67 @@ incluidas `Coexistence→Clean` (saltear), los retrocesos, `X→X` y cualquiera 
 
 ## Criterios de aceptación
 
-- [ ] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
-- [ ] `dotnet test PatchMonitor.sln` pasa con el stack de Docker **apagado** y sin descargar el
+- [x] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
+- [x] `dotnet test PatchMonitor.sln` pasa con el stack de Docker **apagado** y sin descargar el
       binario del test-server de Temporal.
-- [ ] `grep -r "Temporalio\|TemporalClient" src/Contracts/Domain/` no devuelve ninguna coincidencia.
-- [ ] `PatchMonitor.sln` tiene 5 proyectos: los 4 del spec 01 más `test/PatchMonitor.Tests`.
-- [ ] `PatchKey.ToWorkflowId()` es determinístico entre llamadas y entre procesos, sanea caracteres
+- [x] `grep -r "Temporalio\|TemporalClient" src/Contracts/Domain/` no devuelve ninguna coincidencia.
+- [x] `PatchMonitor.sln` tiene 5 proyectos: los 4 del spec 01 más `test/PatchMonitor.Tests`.
+- [x] `PatchKey.ToWorkflowId()` es determinístico entre llamadas y entre procesos, sanea caracteres
       fuera de `[A-Za-z0-9._-]`, y para un id compuesto de más de 200 caracteres devuelve ≤ 200 con
       sufijo de hash estable — los 4 casos con test.
-- [ ] `CoexistenceToDeprecatedGate` devuelve `Blocked` con una ejecución **abierta sin marker** y
+- [x] `CoexistenceToDeprecatedGate` devuelve `Blocked` con una ejecución **abierta sin marker** y
       `Ready` cuando esa misma ejecución está **cerrada** — dos tests distintos.
-- [ ] `DeprecatedToCleanGate` devuelve `Blocked` tanto con `Present` como con `PresentDeprecated` en
+- [x] `DeprecatedToCleanGate` devuelve `Blocked` tanto con `Present` como con `PresentDeprecated` en
       una ejecución abierta, y `Ready` con una ejecución abierta `Absent` — la asimetría queda
       cubierta por tests con nombre explícito.
-- [ ] Ambos gates devuelven `Inconclusive` cuando hay una ejecución abierta con `Marker = Unknown` o
+- [x] Ambos gates devuelven `Inconclusive` cuando hay una ejecución abierta con `Marker = Unknown` o
       cuando `ExecutionSnapshotSet.IsTruncated` es `true`, **salvo** que ya exista un bloqueante
       conocido, en cuyo caso devuelven `Blocked`.
-- [ ] Con 9 ejecuciones bloqueantes, el veredicto trae `BlockingExecutionCount == 9` y
+- [x] Con 9 ejecuciones bloqueantes, el veredicto trae `BlockingExecutionCount == 9` y
       `BlockingSample.Count == 5`.
-- [ ] `PhaseTransition.IsLegal` acepta exactamente `Coexistence→Deprecated` y `Deprecated→Clean`, y
+- [x] `PhaseTransition.IsLegal` acepta exactamente `Coexistence→Deprecated` y `Deprecated→Clean`, y
       rechaza `Coexistence→Clean`, los retrocesos, `X→X` y todo lo que involucre `Unknown`.
-- [ ] `PhaseEvaluator` devuelve `Inconclusive` para `PatchPhase.Unknown` y un veredicto con
+- [x] `PhaseEvaluator` devuelve `Inconclusive` para `PatchPhase.Unknown` y un veredicto con
       `NextPhase == null` para `PatchPhase.Clean`.
-- [ ] Un `ServiceProvider` construido con `AddPatchMonitorServices()` resuelve `PhaseEvaluator` y
+- [x] Un `ServiceProvider` construido con `AddPatchMonitorServices()` resuelve `PhaseEvaluator` y
       exactamente dos `IPhaseGate`, con `From` distintos.
+
+## Resultado de la implementación
+
+Verificado el 2026-09-10 sobre SDK .NET 10.0.302 (el `net8.0` compila con el reference pack de NuGet).
+Rama `spec-02-patch-lifecycle-domain-model`.
+
+**Salida de la verificación end-to-end (paso 9):**
+
+- `dotnet build PatchMonitor.sln` → `Compilación correcta. 0 Advertencia(s) 0 Errores`.
+- `dotnet test PatchMonitor.sln` → `Con error: 0, Superado: 53, Omitido: 0, Total: 53`, en ~2,3 s,
+  con `docker compose ps` sin ningún contenedor (stack detenido con `docker compose stop` durante
+  la corrida) y sin descarga de test-server.
+- `grep -rn "Temporalio\|TemporalClient" src/Contracts/Domain/` → sin coincidencias.
+- `dotnet sln PatchMonitor.sln list` → 5 proyectos: `Common`, `Contracts`, `MonitorApi`,
+  `PatchMonitor` y `test/PatchMonitor.Tests`.
+- Reparto de los 53 tests: `PatchKeyTests` 10, `PhaseTransitionTests` 16, `CoexistenceToDeprecatedGateTests`
+  10, `DeprecatedToCleanGateTests` 9, `PhaseEvaluatorTests` 5, `ServiceRegistrationTests` 3.
+
+**Desviaciones respecto del plan (resueltas durante la implementación):**
+
+1. **`IsOpen()` es método de extensión, no "propiedad de extensión".** C# en `net8.0` no admite
+   propiedades de extensión sobre un enum; `ExecutionStatusExtensions.IsOpen(this ExecutionStatus)`
+   conserva el nombre y la semántica de la spec (`Running` y `ContinuedAsNew` abiertos).
+2. **El recorte de `BlockingSample` a 5 vive solo en `PhaseVerdict.Blocked(...)`**, no también en
+   cada gate: un único punto de control. Los gates pasan la lista completa de `workflowId` y el
+   conteo total; el factory recorta.
+3. **`EvaluatedAt` se toma con `DateTimeOffset.UtcNow` dentro de cada gate y del `PhaseEvaluator`.**
+   La firma de `IPhaseGate.Evaluate` de la spec no recibe reloj; el timestamp no es I/O sobre
+   Temporal/Docker/red, así que no rompe la pureza que exige el spec. Inyectar `TimeProvider` queda
+   disponible para un spec posterior si hiciera falta determinismo del sello temporal.
+4. **`ExecutionSnapshotSet.Empty`** agregado como conveniencia (conjunto vacío y no truncado);
+   lo usan los tests y no estaba enumerado en el Modelo de datos.
+5. **Comentario de `ExecutionStatus.cs` reformulado** para no contener la cadena `Temporalio` y
+   así cumplir literalmente el criterio del `grep`.
+6. **Docker se detuvo y se volvió a levantar** solo para dejar constancia de que `dotnet test`
+   pasa con el stack apagado; el stack estaba corriendo desde la verificación del spec 01 y quedó
+   en ese mismo estado al terminar.
 
 ## Decisiones tomadas y descartadas
 
