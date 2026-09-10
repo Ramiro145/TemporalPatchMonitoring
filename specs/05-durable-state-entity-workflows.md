@@ -1,6 +1,6 @@
 # 05 - Estado durable en entity workflows
 
-**Estado:** Aprobado
+**Estado:** Implementado
 **Depende de:** [04-current-phase-resolution.md](04-current-phase-resolution.md)
 **Fecha:** 2026-09-10
 
@@ -340,38 +340,83 @@ persiste la fase correcta.
     - `docker compose stop patch-monitor-worker` + `up -d`: el estado del entity sigue ahí.
     - Registrar la salida de estos comandos en este spec antes de marcar los criterios.
 
+## Resultado de la verificación end-to-end
+
+Ejecutada el 2026-09-10 con el stack de `docker/` levantado (`docker compose up -d --build`) y un
+harness descartable que usa `TemporalPatchStateStore` / `PatchStateActivities` / `PhaseResolver`
+contra `localhost:7234` (el `7233` interno del cluster propio del monitor).
+
+- **Build / tests sin Docker:** `dotnet build PatchMonitor.sln` → `0 Advertencia(s), 0 Errores`.
+  `dotnet test PatchMonitor.sln` → `Superado: 151, Con error: 0` (los 24 tests nuevos de `State/`
+  corren sobre `WorkflowEnvironment.StartTimeSkippingAsync`; primera corrida descarga el
+  test-server).
+
+- **Acumulación y detección de cambio** sobre `patch-state::default::ProbeWorkflow::probe_patch_233951`:
+  dos assessments `Coexistence/Blocked` idénticos y un tercero `Deprecated/Ready`. `GetState`:
+  `AssessmentCount=3`, `Revision=2`, `History` con 2 entradas
+  (`Unknown→Coexistence` outcome `→Blocked`; `Coexistence→Deprecated` outcome `Blocked→Ready`),
+  `PreviousVerdict=Blocked`. El segundo assessment idéntico dejó `Revision=1` y subió
+  `AssessmentCount` a 2. Un único `WorkflowId` para los tres (no se creó una segunda ejecución).
+
+- **Registry:** `temporal workflow query --workflow-id patch-registry --type List` →
+  `{"Keys":[{…"probe_patch_233838"},{…"probe_patch_233951"}],"UpdatedAt":"2026-09-10T23:39:51…Z"}`
+  (la clave del harness quedó indexada por el `signal-with-start` implícito de `RecordAssessmentAsync`).
+
+- **Override + hidratación + resolver:** `SetOverrideAsync(Deprecated)` por `[WorkflowUpdate]` →
+  `GetState` muestra `Phase=Deprecated Source=Override`. `LoadPhaseOverridesAsync()` cargó 1
+  override en un `InMemoryPhaseOverrideStore` vacío; `PhaseResolver.Resolve` sobre un
+  `PatchDiscoveryResult` sin snapshots devolvió `Source=Override`
+  (`Reason="override de e2e-harness; la inferida era Unknown"`) sin haberlo escrito nunca a mano.
+
+- **Persistencia ante reinicio:** `docker compose stop patch-monitor-worker` + `up -d` (drenaje
+  ordenado: `Worker draining (SIGTERM received)` → `Worker stopped cleanly`). Nueva consulta
+  `GetState` tras el reinicio: `AssessmentCount=3`, `Revision=2`, `History` con 2, `Override`
+  (`Deprecated`) intacto.
+
+Notas de implementación surgidas en la verificación:
+
+- `signal-with-start` se implementó como `StartWorkflowAsync` + (si el entity ya existe)
+  `SignalAsync` sobre la ejecución en curso, capturando `WorkflowAlreadyStartedException`. El
+  `SignalWithStartWorkflowExecution` atómico de un solo RPC deja colgadas las queries inmediatas
+  contra el test-server de time-skipping; este camino se comporta igual contra ambos servidores.
+- `WorkflowValidator` (en `Common`) amplió su detección de "not found" para reconocer también
+  `RpcException.StatusCode.NotFound` (lo que devuelven el test-server y los clusters recientes),
+  además del mensaje de standard visibility sobre Postgres del proyecto de referencia. El
+  parámetro pasó de `TemporalClient` a `ITemporalClient` (ampliación compatible) y expone
+  `NotFoundError` como `const`. El `/health` de `MonitorApi` sigue funcionando igual.
+
 ## Criterios de aceptación
 
-- [ ] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
-- [ ] `dotnet test PatchMonitor.sln` pasa con el stack de Docker **apagado**; los tests de `State/`
+- [x] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
+- [x] `dotnet test PatchMonitor.sln` pasa con el stack de Docker **apagado**; los tests de `State/`
       corren sobre `WorkflowEnvironment.StartTimeSkippingAsync`.
-- [ ] `src/Contracts/Phase/` y `src/PatchMonitor/Services/PhaseResolver.cs` **no cambian**:
+- [x] `src/Contracts/Phase/` y `src/PatchMonitor/Services/PhaseResolver.cs` **no cambian**:
       `git diff --stat` de este spec no los toca, y `IPhaseResolver` / `IPhaseOverrideStore`
       conservan su firma de la spec 04.
-- [ ] El entity se crea por `signal-with-start` con `WorkflowId == key.ToWorkflowId()`; dos
+- [x] El entity se crea por `signal-with-start` con `WorkflowId == key.ToWorkflowId()`; dos
       assessments para la misma `PatchKey` van a la misma ejecución, no crean una segunda.
-- [ ] `Revision` avanza **solo** cuando cambia `(Phase, Outcome, NextPhase)`; dos assessments
+- [x] `Revision` avanza **solo** cuando cambia `(Phase, Outcome, NextPhase)`; dos assessments
       idénticos consecutivos lo dejan igual y `AssessmentCount` sí avanza.
-- [ ] Superado `PATCH_STATE_CAN_THRESHOLD`, el entity hace `Continue-As-New`: el `RunId` cambia,
+- [x] Superado `PATCH_STATE_CAN_THRESHOLD`, el entity hace `Continue-As-New`: el `RunId` cambia,
       `AssessmentCount` vuelve a 0 y `Revision`, `Phase`, `Override` y `History` (recortada a
       `HistoryLimit`) sobreviven.
-- [ ] El `Continue-As-New` nunca corre con handlers en vuelo (`Workflow.AllHandlersFinished` en la
+- [x] El `Continue-As-New` nunca corre con handlers en vuelo (`Workflow.AllHandlersFinished` en la
       condición de espera).
-- [ ] `SetOverrideAsync` con fase fuera de `{Coexistence, Deprecated, Clean}` es rechazado por el
+- [x] `SetOverrideAsync` con fase fuera de `{Coexistence, Deprecated, Clean}` es rechazado por el
       `[WorkflowUpdateValidator]` de forma sincrónica y el estado del entity queda intacto.
-- [ ] `PatchRegistryWorkflow` es idempotente: registrar la misma `PatchKey` N veces deja una sola
+- [x] `PatchRegistryWorkflow` es idempotente: registrar la misma `PatchKey` N veces deja una sola
       entrada en `List()`; también hace `Continue-As-New` arrastrando el set completo.
-- [ ] `IPatchStateStore.GetStateAsync` de una `PatchKey` sin entity devuelve `null` y **no** lanza;
+- [x] `IPatchStateStore.GetStateAsync` de una `PatchKey` sin entity devuelve `null` y **no** lanza;
       cualquier otro error de RPC sí propaga (se distingue con `WorkflowValidator`).
-- [ ] Un `IDecisionSink` que lanza no hace fallar `RecordAssessmentAsync`; `NoopDecisionSink` es la
+- [x] Un `IDecisionSink` que lanza no hace fallar `RecordAssessmentAsync`; `NoopDecisionSink` es la
       implementación registrada por default.
-- [ ] Tras `LoadPhaseOverridesAsync`, `IPhaseOverrideStore.GetAll()` contiene exactamente los
+- [x] Tras `LoadPhaseOverridesAsync`, `IPhaseOverrideStore.GetAll()` contiene exactamente los
       overrides vigentes de los entity workflows: los borrados en el entity desaparecen de la caché.
-- [ ] `StateOptions.FromEnvironment()` devuelve `500` / `20` / `patch-monitor-task-queue` con las
+- [x] `StateOptions.FromEnvironment()` devuelve `500` / `20` / `patch-monitor-task-queue` con las
       env vars ausentes, respeta valores válidos y cae al default ante basura o valores ≤ 0.
-- [ ] Un `ServiceProvider` construido con `AddPatchMonitorServices()` resuelve `StateOptions`,
+- [x] Un `ServiceProvider` construido con `AddPatchMonitorServices()` resuelve `StateOptions`,
       `IPatchStateStore`, `IDecisionSink` y `PatchStateActivities`.
-- [ ] El `patch-monitor-worker` declara `PATCH_STATE_CAN_THRESHOLD` y `PATCH_STATE_HISTORY_LIMIT`,
+- [x] El `patch-monitor-worker` declara `PATCH_STATE_CAN_THRESHOLD` y `PATCH_STATE_HISTORY_LIMIT`,
       y el worker arranca con los dos workflows y la Activity registrados.
 
 ## Decisiones tomadas y descartadas

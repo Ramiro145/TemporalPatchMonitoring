@@ -4,8 +4,8 @@ using Contracts.Domain;
 using Contracts.Phase;
 using Contracts.State;
 using Contracts.Workflows;
-using Temporalio.Api.Enums.V1;
 using Temporalio.Client;
+using Temporalio.Exceptions;
 
 namespace PatchMonitor.Services;
 
@@ -13,9 +13,9 @@ namespace PatchMonitor.Services;
 /// Implementación de <see cref="IPatchStateStore"/> sobre el <see cref="ITemporalClient"/> del
 /// <b>cluster propio del monitor</b> (<c>TEMPORAL_HOST</c>, no <c>TARGET_TEMPORAL_HOST</c>: el
 /// estado del monitor no vive en el namespace observado). Toda escritura es "crea-o-señala":
-/// un start idempotente (<see cref="WorkflowIdConflictPolicy.UseExisting"/>) más el signal, sin
-/// carrera de "existe / no existe". Los updates de override necesitan un entity ya arrancado,
-/// que <see cref="EnsureEntityAsync"/> garantiza con el mismo start idempotente.
+/// un start y, si el entity ya existía, un signal sobre la ejecución en curso; sin carrera de
+/// "existe / no existe". Los updates de override necesitan un entity ya arrancado, que
+/// <see cref="EnsureEntityAsync"/> garantiza con el mismo start idempotente.
 /// </summary>
 public sealed class TemporalPatchStateStore : IPatchStateStore
 {
@@ -145,10 +145,10 @@ public sealed class TemporalPatchStateStore : IPatchStateStore
         return await handle.ExecuteUpdateAsync(wf => wf.ClearOverrideAsync()).ConfigureAwait(false);
     }
 
-    // "Crea-o-señala" en un solo camino lógico: un start idempotente (UseExisting) seguido del
-    // signal. Equivale a signal-with-start; se hace en dos RPCs porque el test-server de
-    // time-skipping no responde queries hechas inmediatamente después de un
-    // SignalWithStartWorkflowExecution.
+    // "Crea-o-señala": start seguido del signal, y si el entity ya existe se señala la
+    // ejecución en curso. Dos RPCs en vez de un SignalWithStartWorkflowExecution atómico
+    // porque el test-server de time-skipping no responde queries hechas inmediatamente
+    // después de un signal-with-start; este camino funciona igual contra ambos servidores.
     private async Task<WorkflowHandle<T>> SignalWithStartAsync<T>(
         string workflowId,
         Expression<Func<T, Task>> runCall,
@@ -156,27 +156,38 @@ public sealed class TemporalPatchStateStore : IPatchStateStore
         where T : class
     {
         var client = await _client.Value.ConfigureAwait(false);
-        var options = new WorkflowOptions(workflowId, _options.TaskQueue)
-        {
-            IdConflictPolicy = WorkflowIdConflictPolicy.UseExisting,
-        };
+        var options = new WorkflowOptions(workflowId, _options.TaskQueue);
 
-        var handle = await client.StartWorkflowAsync(runCall, options).ConfigureAwait(false);
+        WorkflowHandle<T> handle;
+        try
+        {
+            handle = await client.StartWorkflowAsync(runCall, options).ConfigureAwait(false);
+        }
+        catch (WorkflowAlreadyStartedException)
+        {
+            handle = client.GetWorkflowHandle<T>(workflowId);
+        }
+
         await handle.SignalAsync(signalCall).ConfigureAwait(false);
         return handle;
     }
 
     // Los updates de override no admiten signal-with-start: el entity tiene que existir. Un
-    // start idempotente (UseExisting) lo garantiza sin carrera.
+    // start idempotente (crea-o-recupera) lo garantiza sin carrera.
     private async Task<WorkflowHandle<IPatchStateWorkflow>> EnsureEntityAsync(PatchKey key)
     {
         var client = await _client.Value.ConfigureAwait(false);
-        var options = new WorkflowOptions(key.ToWorkflowId(), _options.TaskQueue)
-        {
-            IdConflictPolicy = WorkflowIdConflictPolicy.UseExisting,
-        };
+        var workflowId = key.ToWorkflowId();
+        var options = new WorkflowOptions(workflowId, _options.TaskQueue);
 
-        return await client.StartWorkflowAsync(
-            (IPatchStateWorkflow wf) => wf.RunAsync(key, null), options).ConfigureAwait(false);
+        try
+        {
+            return await client.StartWorkflowAsync(
+                (IPatchStateWorkflow wf) => wf.RunAsync(key, null), options).ConfigureAwait(false);
+        }
+        catch (WorkflowAlreadyStartedException)
+        {
+            return client.GetWorkflowHandle<IPatchStateWorkflow>(workflowId);
+        }
     }
 }

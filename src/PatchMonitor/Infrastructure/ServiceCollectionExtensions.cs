@@ -1,9 +1,11 @@
 using Contracts.Discovery;
 using Contracts.Domain.Gates;
 using Contracts.Phase;
+using Contracts.State;
 using Microsoft.Extensions.DependencyInjection;
 using PatchMonitor.Activities;
 using PatchMonitor.Services;
+using Temporalio.Client;
 
 namespace PatchMonitor.Infrastructure;
 
@@ -36,7 +38,21 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IPhaseResolver, PhaseResolver>();
         services.AddSingleton<PhaseActivities>();
 
-        // INotifier, IDecisionSink llegan en los specs 05+.
+        // Estado durable en entity workflows (spec 05). StateOptions desde el entorno; el
+        // TemporalClient propio del monitor (TEMPORAL_HOST, no el namespace observado) como
+        // Lazy<Task<...>> con la misma forma que TemporalExecutionSource. El sink es no-op por
+        // default; un adaptador real (SQL u otro) es trabajo futuro.
+        services.AddSingleton(_ => StateOptions.FromEnvironment());
+        services.AddSingleton(_ => new Lazy<Task<ITemporalClient>>(async () =>
+            (ITemporalClient)await TemporalClient.ConnectAsync(new TemporalClientConnectOptions
+            {
+                TargetHost = Environment.GetEnvironmentVariable("TEMPORAL_HOST") ?? "temporal:7233",
+            })));
+        services.AddSingleton<IDecisionSink, NoopDecisionSink>();
+        services.AddSingleton<IPatchStateStore, TemporalPatchStateStore>();
+        services.AddSingleton<PatchStateActivities>();
+
+        // INotifier llega en el spec 07.
         return services;
     }
 }
