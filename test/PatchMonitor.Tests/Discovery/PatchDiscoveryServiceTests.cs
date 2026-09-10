@@ -12,6 +12,12 @@ public class PatchDiscoveryServiceTests
 
     private static PatchDiscoveryService Build(FakeExecutionSource source) => new(source, Options);
 
+    private static PatchDiscoveryService Build(FakeExecutionSource source, DiscoveryOptions options) =>
+        new(source, options);
+
+    private static PatchDiscoveryResult ForType(IEnumerable<PatchDiscoveryResult> results, string workflowType) =>
+        results.Single(r => r.Key.WorkflowType == workflowType);
+
     private static ExecutionSnapshot Only(PatchDiscoveryResult result) =>
         Assert.Single(result.Executions.Snapshots);
 
@@ -212,5 +218,63 @@ public class PatchDiscoveryServiceTests
         Assert.Equal(
             MarkerPresence.Unknown,
             result.Executions.Snapshots.Single(s => s.WorkflowId == "broken").Marker);
+    }
+
+    // ---- Topes e IsTruncated --------------------------------------------------
+
+    [Fact]
+    public async Task Con_LimitReached_todos_los_sets_salen_truncados()
+    {
+        var source = new FakeExecutionSource()
+            .Seed(
+                HistoryFixtures.OpenWithAttribute("core-patch", "OrderWorkflow"),
+                HistoryFixtures.OpenWithAttribute("core-patch", "ShippingWorkflow"))
+            .ForceLimitReached();
+
+        var results = await Build(source).DiscoverAsync();
+
+        Assert.Equal(2, results.Count);
+        Assert.All(results, r => Assert.True(r.Executions.IsTruncated));
+    }
+
+    [Fact]
+    public async Task Con_MaxHistories_agotado_solo_se_trunca_el_patch_con_ejecuciones_sin_inspeccionar()
+    {
+        var options = Options with { MaxHistories = 1 };
+        var source = new FakeExecutionSource().Seed(
+            HistoryFixtures.OpenWithAttribute("core-patch", "OrderWorkflow").WithWorkflowId("patched"),
+            HistoryFixtures.OpenWithAttribute("other-patch", "ShippingWorkflow").WithWorkflowId("shipped"),
+            HistoryFixtures.OpenPrePatch("OrderWorkflow").WithWorkflowId("pre"));
+
+        var results = await Build(source, options).DiscoverAsync();
+
+        Assert.True(ForType(results, "OrderWorkflow").Executions.IsTruncated);
+        Assert.False(ForType(results, "ShippingWorkflow").Executions.IsTruncated);
+    }
+
+    [Fact]
+    public async Task Una_excepcion_de_historia_trunca_solo_su_patch_y_deja_los_demas_intactos()
+    {
+        var source = new FakeExecutionSource().Seed(
+            HistoryFixtures.OpenWithAttribute("core-patch", "OrderWorkflow").WithWorkflowId("ok"),
+            HistoryFixtures.OpenPrePatch("OrderWorkflow").WithWorkflowId("boom").WithBrokenHistory(),
+            HistoryFixtures.OpenWithMarker("solo-hist", deprecated: false, "BillingWorkflow"));
+
+        var results = await Build(source).DiscoverAsync();
+
+        Assert.True(ForType(results, "OrderWorkflow").Executions.IsTruncated);
+        Assert.False(ForType(results, "BillingWorkflow").Executions.IsTruncated);
+    }
+
+    [Fact]
+    public async Task Con_presupuesto_de_sobra_y_sin_LimitReached_nada_se_trunca()
+    {
+        var source = new FakeExecutionSource().Seed(
+            HistoryFixtures.OpenWithMarker("core-patch", deprecated: false, "OrderWorkflow"),
+            HistoryFixtures.OpenPrePatch("OrderWorkflow"));
+
+        var results = await Build(source).DiscoverAsync();
+
+        Assert.All(results, r => Assert.False(r.Executions.IsTruncated));
     }
 }

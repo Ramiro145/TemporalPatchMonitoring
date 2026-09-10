@@ -35,10 +35,24 @@ public sealed class PatchDiscoveryService : IPatchDiscovery
         // Absent (pre-patch) o Unknown (historia no leída), a cada patch de su mismo workflowType.
         var floating = new List<(ExecutionListItem Item, MarkerPresence Presence)>();
 
+        var historiesRead = 0;
+
         foreach (var item in page.Items)
         {
             var attributePatchIds = PatchIdsFromAttribute(item.ChangeVersions);
-            var (markers, historyReadable) = await ReadHistoryAsync(item, ct).ConfigureAwait(false);
+
+            IReadOnlyList<PatchMarker> markers;
+            bool historyReadable;
+            if (historiesRead < _options.MaxHistories)
+            {
+                historiesRead++;
+                (markers, historyReadable) = await ReadHistoryAsync(item, ct).ConfigureAwait(false);
+            }
+            else
+            {
+                // Tope MaxHistories agotado: la ejecución queda sin inspeccionar.
+                (markers, historyReadable) = (Array.Empty<PatchMarker>(), false);
+            }
 
             if (markers.Count > 0)
             {
@@ -71,9 +85,19 @@ public sealed class PatchDiscoveryService : IPatchDiscovery
         return byKey
             .Select(kv => new PatchDiscoveryResult(
                 kv.Key,
-                new ExecutionSnapshotSet(kv.Value.Values.ToArray(), IsTruncated: false)))
+                new ExecutionSnapshotSet(kv.Value.Values.ToArray(), IsTruncated(page, kv.Value.Values))))
             .ToArray();
     }
+
+    /// <summary>
+    /// Un patch sale truncado si el listado topeó en <c>MaxExecutions</c> (<c>LimitReached</c>,
+    /// que afecta a todos los patches por igual) o si alguna de sus ejecuciones quedó en
+    /// <see cref="MarkerPresence.Unknown"/> —por el tope <c>MaxHistories</c> o por una lectura
+    /// de historia fallida—. Los gates del spec 02 traducen ese <c>IsTruncated</c> a
+    /// <c>Inconclusive</c> en vez de un <c>Ready</c> falso.
+    /// </summary>
+    private static bool IsTruncated(ExecutionListPage page, IEnumerable<ExecutionSnapshot> executions) =>
+        page.LimitReached || executions.Any(s => s.Marker == MarkerPresence.Unknown);
 
     /// <summary>
     /// Lee la Event History de una ejecución. Devuelve la lista de markers <c>core_patch</c> y
