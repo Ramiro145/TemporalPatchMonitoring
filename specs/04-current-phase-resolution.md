@@ -1,6 +1,6 @@
 # 04 - Resolución de la fase actual de un patch
 
-**Estado:** Aprobado
+**Estado:** Implementado
 **Depende de:** [03-patch-discovery-two-tier.md](03-patch-discovery-two-tier.md)
 **Fecha:** 2026-09-10
 
@@ -300,38 +300,77 @@ Notas:
 
 ## Criterios de aceptación
 
-- [ ] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
-- [ ] `dotnet test PatchMonitor.sln` pasa con el stack de Docker **apagado** y sin descargar el
+- [x] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
+- [x] `dotnet test PatchMonitor.sln` pasa con el stack de Docker **apagado** y sin descargar el
       binario del test-server; `test/PatchMonitor.Tests/PatchMonitor.Tests.csproj` no gana ninguna
       referencia nueva (ni `Temporalio`, ni `Microsoft.Extensions.TimeProvider.Testing`).
-- [ ] `grep -rn "Temporalio\|TemporalClient" src/Contracts/Phase/ src/PatchMonitor/Services/PhaseResolver.cs`
+- [x] `grep -rn "Temporalio\|TemporalClient" src/Contracts/Phase/ src/PatchMonitor/Services/PhaseResolver.cs`
       no devuelve nada. Dentro de `src/PatchMonitor/` el `using Temporalio` nuevo queda solo en
       `Activities/PhaseActivities.cs` (la envoltura `[Activity]` y la `ApplicationFailureException`).
-- [ ] Hay un test por cada fila de la tabla de decisión del Modelo de datos (casos 1 a 6), más el
+- [x] Hay un test por cada fila de la tabla de decisión del Modelo de datos (casos 1 a 6), más el
       test con nombre explícito del desempate `Present` vs `PresentDeprecated` en empate de
       `StartTime`.
-- [ ] `newestWithMarker` `Present` → `Coexistence`; `PresentDeprecated` → `Deprecated`. Una ejecución
+- [x] `newestWithMarker` `Present` → `Coexistence`; `PresentDeprecated` → `Deprecated`. Una ejecución
       vieja `Present` no cambia el resultado si la más reciente con marker es `PresentDeprecated`.
-- [ ] `Clean` se devuelve **solo** cuando no queda ninguna ejecución abierta con marker **y** existe
+- [x] `Clean` se devuelve **solo** cuando no queda ninguna ejecución abierta con marker **y** existe
       una sin marker arrancada más de `CleanGrace` después del último marker — dos tests, uno que da
       `Clean` y uno que no por no superar el margen.
-- [ ] Una ejecución **abierta** con marker presente nunca produce `Clean`, aunque haya código nuevo
+- [x] Una ejecución **abierta** con marker presente nunca produce `Clean`, aunque haya código nuevo
       sin marker.
-- [ ] Conjunto vacío o todas las ejecuciones en `Marker == Unknown` → `PhaseResolution.Phase ==
+- [x] Conjunto vacío o todas las ejecuciones en `Marker == Unknown` → `PhaseResolution.Phase ==
     PatchPhase.Unknown`. `ExecutionSnapshotSet.IsTruncated == true` por sí solo **no** fuerza
       `Unknown`.
-- [ ] Un override vigente gana: `PhaseResolution.Source == Override`, `Phase == ov.Phase`, y el
+- [x] Un override vigente gana: `PhaseResolution.Source == Override`, `Phase == ov.Phase`, y el
       `Reason` incluye la fase que se habría inferido. Un override con `ExpiresAt` en el pasado se
       ignora y el resultado sale `Source == Inferred`.
-- [ ] `PhaseOptions.FromEnvironment()` devuelve `CleanGrace == 24 h` con `PHASE_CLEAN_GRACE_HOURS`
+- [x] `PhaseOptions.FromEnvironment()` devuelve `CleanGrace == 24 h` con `PHASE_CLEAN_GRACE_HOURS`
       ausente, y respeta un valor válido; un valor no numérico o ≤ 0 cae a 24 h sin lanzar.
-- [ ] `InMemoryPhaseOverrideStore`: `Set` + `Get` devuelve el override; `Clear` lo borra; un
+- [x] `InMemoryPhaseOverrideStore`: `Set` + `Get` devuelve el override; `Clear` lo borra; un
       override vencido no aparece en `Get` ni en `GetAll`.
-- [ ] Un `ServiceProvider` construido con `AddPatchMonitorServices()` resuelve `IPhaseResolver`,
+- [x] Un `ServiceProvider` construido con `AddPatchMonitorServices()` resuelve `IPhaseResolver`,
       `IPhaseOverrideStore`, `PhaseOptions`, `TimeProvider` y `PhaseActivities`.
-- [ ] El `patch-monitor-worker` del `docker-compose.yml` declara `PHASE_CLEAN_GRACE_HOURS` y el
+- [x] El `patch-monitor-worker` del `docker-compose.yml` declara `PHASE_CLEAN_GRACE_HOURS` y el
       worker arranca con `PhaseActivities` registrada (`docker compose config` válido; test de
       registro en DI).
+
+## Resultado de la implementación
+
+Implementado el 2026-09-10 en la rama `spec-04-current-phase-resolution`. Suite: **114 tests**
+(85 del spec 03 + 29 nuevos: `PhaseOptionsTests` 7, `InMemoryPhaseOverrideStoreTests` 6,
+`PhaseResolverTests` 15, `PhaseRegistrationTests` 1), en verde con el stack de Docker detenido y
+sin descarga del test-server.
+
+Archivos nuevos: `src/Contracts/Phase/{IPhaseResolver,PhaseResolution,PhaseOverride,IPhaseOverrideStore,PhaseOptions}.cs`,
+`src/PatchMonitor/Services/{PhaseResolver,InMemoryPhaseOverrideStore}.cs`,
+`src/PatchMonitor/Activities/PhaseActivities.cs`, más los cinco archivos de `test/PatchMonitor.Tests/Phase/`.
+Modificados: `ServiceCollectionExtensions.cs`, `Program.cs`, `docker/docker-compose.yml`.
+`src/Contracts/Contracts.csproj` y `test/PatchMonitor.Tests/PatchMonitor.Tests.csproj` sin cambios.
+
+**Verificación end-to-end (paso 8).** Contra el stack de `docker/` con el worker recompilado
+(`docker compose build patch-monitor-worker` + `up -d --force-recreate` → `Worker listening on
+'patch-monitor-task-queue'...`), y un harness descartable (no versionado) que levanta un
+`ProbeWorkflow` parcheado (`Workflow.Patched("probe_patch")`) y un `DriverWorkflow` que invoca las
+Activities reales `DiscoverPatchesAsync` → `ResolvePhase` → `SetPhaseOverride` → `ResolvePhase`:
+
+```text
+PatchKey            : default / ProbeWorkflow / probe_patch
+snapshots           : 2  IsTruncated=False
+snapshot[0]         : status=Running marker=Present
+ResolvePhase #1     : Phase=Coexistence  Source=Inferred  Reason="marker más reciente sin deprecar"
+SetPhaseOverride    : -> Deprecated (por probe-harness)
+ResolvePhase #2     : Phase=Deprecated  Source=Override  Reason="override de probe-harness; la inferida era Coexistence"
+```
+
+- `SetPhaseOverride` con una fase válida (`Deprecated`) no lanza; la `ApplicationFailureException`
+  no-reintentable solo salta con una fase fuera de `{Coexistence, Deprecated, Clean}` (cubierto en
+  la suite, no ejercido en vivo).
+- `docker compose config` válido con `PHASE_CLEAN_GRACE_HOURS: "24"` en `patch-monitor-worker`.
+- `grep -rn "Temporalio\|TemporalClient" src/Contracts/Phase/ src/PatchMonitor/Services/PhaseResolver.cs`
+  → sin coincidencias.
+
+**Desvíos respecto de la spec:** ninguno. El único ajuste fue reformular una frase del XML-doc de
+`PhaseResolver` que contenía literalmente el texto `using Temporalio` (disparaba un falso positivo
+del `grep` de aceptación) por "sin acoplarse al SDK de Temporal".
 
 ## Decisiones tomadas y descartadas
 

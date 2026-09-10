@@ -95,6 +95,16 @@ public class PhaseResolverTests
         Assert.Equal(PatchPhase.Deprecated, res.Phase);
     }
 
+    [Fact]
+    public void IsTruncated_por_si_solo_no_fuerza_Unknown_si_hay_un_marker_legible()
+    {
+        var res = Resolver().Resolve(
+            New().With(Open().WithMarker().StartedAt(T0)).Truncated().Build());
+
+        Assert.Equal(PatchPhase.Coexistence, res.Phase);
+        Assert.Equal(PhaseSource.Inferred, res.Source);
+    }
+
     // ── Caso 3: código limpio ────────────────────────────────────────────────
 
     [Fact]
