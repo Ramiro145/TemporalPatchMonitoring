@@ -30,7 +30,24 @@ public sealed class PhaseResolver : IPhaseResolver
     public PhaseResolution Resolve(PatchDiscoveryResult result)
     {
         var now = _clock.GetUtcNow();
-        return Infer(result, now);
+        var inferred = Infer(result, now);
+
+        // Caso 1: un override vigente del operador gana siempre, sin validarse contra la fase
+        // inferida ni contra PhaseTransition.IsLegal (eso es del spec 08, al escribirlo por
+        // HTTP). La inferida viaja en el Reason para que el desacuerdo sea visible. El store ya
+        // descarta los vencidos contra DateTimeOffset.UtcNow; acá se vuelve a chequear con el
+        // reloj inyectado, que es el autoritativo, con IsActiveAt(now).
+        var ov = _overrides.Get(result.Key);
+        if (ov is not null && ov.IsActiveAt(now))
+        {
+            return new PhaseResolution(
+                ov.Phase,
+                PhaseSource.Override,
+                $"override de {ov.DeclaredBy}; la inferida era {inferred.Phase}",
+                now);
+        }
+
+        return inferred;
     }
 
     /// <summary>

@@ -142,4 +142,74 @@ public class PhaseResolverTests
         Assert.Equal(PatchPhase.Deprecated, res.Phase);
         Assert.Equal("marker más reciente deprecado", res.Reason);
     }
+
+    // ── Caso 1: precedencia del override ──────────────────────────────────────
+
+    private static PhaseOverride ActiveOverride(PatchPhase phase) =>
+        new(Key, phase, "una-operadora", Now.AddDays(-1), ExpiresAt: null);
+
+    [Fact]
+    public void Caso1_override_vigente_gana_con_Source_Override_y_la_inferida_en_el_Reason()
+    {
+        var store = new InMemoryPhaseOverrideStore();
+        store.Set(ActiveOverride(PatchPhase.Deprecated));
+
+        // Snapshots que inferirían Coexistence.
+        var res = Resolver(store).Resolve(Of(Open().WithMarker().StartedAt(T0)));
+
+        Assert.Equal(PatchPhase.Deprecated, res.Phase);
+        Assert.Equal(PhaseSource.Override, res.Source);
+        Assert.Contains("la inferida era Coexistence", res.Reason);
+        Assert.Contains("una-operadora", res.Reason);
+    }
+
+    [Fact]
+    public void Caso1_override_con_ExpiresAt_vencido_se_ignora_y_gana_la_inferida()
+    {
+        var store = new InMemoryPhaseOverrideStore();
+        store.Set(ActiveOverride(PatchPhase.Deprecated) with { ExpiresAt = Now.AddHours(-1) });
+
+        var res = Resolver(store).Resolve(Of(Open().WithMarker().StartedAt(T0)));
+
+        Assert.Equal(PatchPhase.Coexistence, res.Phase);
+        Assert.Equal(PhaseSource.Inferred, res.Source);
+    }
+
+    [Fact]
+    public void Caso1_override_que_el_store_da_por_vigente_pero_vencio_para_el_reloj_del_resolver_se_ignora()
+    {
+        // El store devuelve el override (su chequeo best-effort contra UtcNow lo deja pasar);
+        // el resolver, con su reloj inyectado en Now, lo descarta con IsActiveAt(now).
+        var stale = ActiveOverride(PatchPhase.Deprecated) with { ExpiresAt = Now.AddMinutes(-1) };
+        var store = new StubOverrideStore(stale);
+
+        var res = Resolver(store).Resolve(Of(Open().WithMarker().StartedAt(T0)));
+
+        Assert.Equal(PatchPhase.Coexistence, res.Phase);
+        Assert.Equal(PhaseSource.Inferred, res.Source);
+    }
+
+    [Fact]
+    public void Sin_override_el_Source_es_siempre_Inferred()
+    {
+        var res = Resolver().Resolve(Of(Open().WithDeprecatedMarker().StartedAt(T0)));
+
+        Assert.Equal(PhaseSource.Inferred, res.Source);
+    }
+
+    private sealed class StubOverrideStore : IPhaseOverrideStore
+    {
+        private readonly PhaseOverride? _ov;
+
+        public StubOverrideStore(PhaseOverride? ov) => _ov = ov;
+
+        public PhaseOverride? Get(PatchKey key) => _ov;
+
+        public void Set(PhaseOverride ov) => throw new NotSupportedException();
+
+        public void Clear(PatchKey key) => throw new NotSupportedException();
+
+        public IReadOnlyList<PhaseOverride> GetAll() =>
+            _ov is null ? Array.Empty<PhaseOverride>() : new[] { _ov };
+    }
 }
