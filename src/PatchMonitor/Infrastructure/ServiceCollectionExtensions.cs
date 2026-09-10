@@ -1,5 +1,8 @@
+using Contracts.Discovery;
 using Contracts.Domain.Gates;
 using Microsoft.Extensions.DependencyInjection;
+using PatchMonitor.Activities;
+using PatchMonitor.Services;
 
 namespace PatchMonitor.Infrastructure;
 
@@ -16,7 +19,14 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IPhaseGate, DeprecatedToCleanGate>();
         services.AddSingleton<PhaseEvaluator>();
 
-        // IPatchDiscovery, IPhaseResolver, INotifier, IDecisionSink llegan en los specs 03+.
+        // Descubrimiento en dos niveles (spec 03). Singleton: TemporalExecutionSource cachea
+        // la conexión al cluster. La Activity se resuelve por tipo concreto desde WorkerHost.
+        services.AddSingleton(_ => DiscoveryOptions.FromEnvironment());
+        services.AddSingleton<IExecutionSource, TemporalExecutionSource>();
+        services.AddSingleton<IPatchDiscovery, PatchDiscoveryService>();
+        services.AddSingleton<DiscoveryActivities>();
+
+        // IPhaseResolver, INotifier, IDecisionSink llegan en los specs 04+.
         return services;
     }
 }

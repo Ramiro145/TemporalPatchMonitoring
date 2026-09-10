@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Common;
 using Contracts;
+using PatchMonitor.Activities;
 using PatchMonitor.Infrastructure;
 using PatchMonitor.Workflows;
 
@@ -14,4 +15,4 @@ var provider = services.BuildServiceProvider();
 await WorkerHost.RunAsync<HealthWorkflow>(
     taskQueue,
     provider,
-    activityTypes: Array.Empty<Type>());
+    activityTypes: new[] { typeof(DiscoveryActivities) });

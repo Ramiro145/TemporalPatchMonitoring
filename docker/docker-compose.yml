@@ -70,6 +70,10 @@ services:
       - MONITOR_TASK_QUEUE=patch-monitor-task-queue
       - TARGET_TEMPORAL_HOST=temporal:7233
       - TARGET_TEMPORAL_NAMESPACE=default
+      # Descubrimiento en dos niveles (spec 03). Topes por corrida y ventana de cerradas.
+      - DISCOVERY_LOOKBACK_DAYS=7
+      - DISCOVERY_MAX_EXECUTIONS=500
+      - DISCOVERY_MAX_HISTORIES=200
     depends_on:
       temporal:
         condition: service_healthy
