@@ -1,6 +1,6 @@
 # 01 - Scaffolding de la solución y stack de Docker
 
-**Estado:** Borrador
+**Estado:** Aprobado
 **Depende de:** -
 **Fecha:** 2026-09-10
 
@@ -188,22 +188,22 @@ tareas de la task queue y las completa.
 
 Variables de entorno (todas con default; el stack de Docker las fija explícitamente):
 
-| Variable | Default | Quién la lee | Para qué |
-|----------|---------|--------------|----------|
-| `TEMPORAL_HOST` | `temporal:7233` | `WorkerHost`, `MonitorApi` | Dónde corre el cluster propio del monitor (conexión del worker y del cliente de la API) |
-| `MONITOR_TASK_QUEUE` | `patch-monitor-task-queue` | `PatchMonitor/Program.cs`, `MonitorApi` | Task queue del worker del monitor |
-| `TARGET_TEMPORAL_HOST` | `temporal:7233` | *(declarada, sin consumidor en este spec)* | Cluster que el monitor **observa**; lo consume el spec 03 |
-| `TARGET_TEMPORAL_NAMESPACE` | `default` | *(declarada, sin consumidor en este spec)* | Namespace observado; lo consume el spec 03 |
+| Variable                    | Default                    | Quién la lee                               | Para qué                                                                                |
+| --------------------------- | -------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `TEMPORAL_HOST`             | `temporal:7233`            | `WorkerHost`, `MonitorApi`                 | Dónde corre el cluster propio del monitor (conexión del worker y del cliente de la API) |
+| `MONITOR_TASK_QUEUE`        | `patch-monitor-task-queue` | `PatchMonitor/Program.cs`, `MonitorApi`    | Task queue del worker del monitor                                                       |
+| `TARGET_TEMPORAL_HOST`      | `temporal:7233`            | _(declarada, sin consumidor en este spec)_ | Cluster que el monitor **observa**; lo consume el spec 03                               |
+| `TARGET_TEMPORAL_NAMESPACE` | `default`                  | _(declarada, sin consumidor en este spec)_ | Namespace observado; lo consume el spec 03                                              |
 
 Puertos publicados por `docker/docker-compose.yml` (desplazados respecto de `ReleaseOrderDemo` para
 poder tener los dos stacks arriba a la vez, requisito del spec 09):
 
-| Servicio | Interno | Externo | Por qué está desplazado |
-|----------|---------|---------|--------------------------|
-| `temporal` | 7233 | **7234** | `ReleaseOrderDemo` publica 7233 |
-| `temporal-ui` | 8080 | **8234** | `ReleaseOrderDemo` publica 8233 |
-| `temporal-db` (Postgres) | 5432 | **5433** | `ReleaseOrderDemo` publica 5432 |
-| `monitor-api` | 5100 | **5100** | `ReleaseOrderDemo` publica 5000/5001; 5100 queda libre |
+| Servicio                 | Interno | Externo  | Por qué está desplazado                                |
+| ------------------------ | ------- | -------- | ------------------------------------------------------ |
+| `temporal`               | 7233    | **7234** | `ReleaseOrderDemo` publica 7233                        |
+| `temporal-ui`            | 8080    | **8234** | `ReleaseOrderDemo` publica 8233                        |
+| `temporal-db` (Postgres) | 5432    | **5433** | `ReleaseOrderDemo` publica 5432                        |
+| `monitor-api`            | 5100    | **5100** | `ReleaseOrderDemo` publica 5000/5001; 5100 queda libre |
 
 Nombre de proyecto de Docker Compose: `patchmonitor` (vía `name:` en el compose o `-p patchmonitor`),
 para que los contenedores y la red no colisionen con los del repo de referencia.
@@ -252,7 +252,7 @@ para que los contenedores y la red no colisionen con los del repo de referencia.
    `TEMPORAL_HOST=temporal:7233`, `TARGET_TEMPORAL_HOST=temporal:7233`,
    `TARGET_TEMPORAL_NAMESPACE=default`, `stop_grace_period: 45s`, `depends_on: temporal`) y
    `monitor-api` (build con `Dockerfile.MonitorApi`, `5100:5100`, mismas env vars, `depends_on:
-   temporal`). Sin SQL Server ni `db-init`. Commit.
+temporal`). Sin SQL Server ni `db-init`. Commit.
 
 9. **Verificación end-to-end manual.** Desde `docker/`:
    `docker compose build --no-cache` y `docker compose up -d`. Comprobar:
@@ -267,7 +267,7 @@ para que los contenedores y la red no colisionen con los del repo de referencia.
      (`Worker draining (SIGTERM received)...`) y luego `Worker stopped cleanly.` en menos de 45 s.
    - Con un stack de `ReleaseOrderDemo` levantado en paralelo, `docker compose up -d` de este
      proyecto no reporta colisión de puertos ni de nombres de contenedor.
-   Registrar la salida de estos comandos en este spec antes de marcar los criterios de aceptación.
+     Registrar la salida de estos comandos en este spec antes de marcar los criterios de aceptación.
 
 ## Criterios de aceptación
 
@@ -286,7 +286,7 @@ para que los contenedores y la red no colisionen con los del repo de referencia.
 - [ ] `POST http://localhost:5100/health/workflow` crea una ejecución de `HealthWorkflow` que termina
       en `Completed` con resultado `"patch-monitor alive"`, visible en la UI.
 - [ ] `docker compose stop patch-monitor-worker` produce el log de drenaje y `Worker stopped
-      cleanly.` en menos de 45 s (drenaje ordenado verificado).
+    cleanly.` en menos de 45 s (drenaje ordenado verificado).
 - [ ] Con un stack de `ReleaseOrderDemo` corriendo en paralelo, levantar este stack no colisiona en
       puertos ni en nombres de contenedor.
 
@@ -325,14 +325,14 @@ para que los contenedores y la red no colisionen con los del repo de referencia.
 
 ## Riesgos identificados
 
-| Riesgo | Mitigación |
-|--------|------------|
-| El stack colisiona en puertos o nombres de contenedor con un `ReleaseOrderDemo` levantado en la misma máquina. | Puertos desplazados (tabla de Modelo de datos), `name: patchmonitor` en el compose, contenedores con prefijo propio. Criterio de aceptación explícito con los dos stacks arriba. |
+| Riesgo                                                                                                                                    | Mitigación                                                                                                                                                                                                                 |
+| ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| El stack colisiona en puertos o nombres de contenedor con un `ReleaseOrderDemo` levantado en la misma máquina.                            | Puertos desplazados (tabla de Modelo de datos), `name: patchmonitor` en el compose, contenedores con prefijo propio. Criterio de aceptación explícito con los dos stacks arriba.                                           |
 | `temporalio/auto-setup` tarda decenas de segundos en aceptar conexiones y la API o el worker arrancan antes → primeras conexiones fallan. | `depends_on: temporal` + el `TemporalClient.ConnectAsync` reintenta; `GET /health` reporta `unreachable` en vez de tirar 500 mientras el cluster inicia. La verificación del paso 9 se hace tras `docker compose ps` sano. |
-| `PosixSignalRegistration` para `SIGTERM` no existe en Windows en `dotnet run` local. | `WorkerHost` ya captura `PlatformNotSupportedException` / `ArgumentException` y sigue con Ctrl+C; el drenaje por `SIGTERM` solo se exige dentro del contenedor. |
-| `HealthWorkflow` queda como ruido en specs posteriores. | Documentado acá y en `Construction.md` §7 (spec 06): `MonitorWorkflow` lo reemplaza como workflow principal; `HealthWorkflow` puede quedar como sonda o eliminarse en el 06. |
-| El `restore` de Docker no cachea y cada build baja NuGet entero. | Los Dockerfile copian primero los `.csproj` de `Common`, `Contracts` y el proyecto final, y corren `dotnet restore` antes de copiar el código, igual que los del repo de referencia. |
-| Versiones de imagen de Temporal (`auto-setup`, `ui`) distintas de las del repo de referencia introducen diferencias de comportamiento. | Se fijan exactamente las de `Construction.md` §3: `auto-setup:1.23.0`, `ui:2.23.0`, `postgres:15`. Sin tags `latest`. |
+| `PosixSignalRegistration` para `SIGTERM` no existe en Windows en `dotnet run` local.                                                      | `WorkerHost` ya captura `PlatformNotSupportedException` / `ArgumentException` y sigue con Ctrl+C; el drenaje por `SIGTERM` solo se exige dentro del contenedor.                                                            |
+| `HealthWorkflow` queda como ruido en specs posteriores.                                                                                   | Documentado acá y en `Construction.md` §7 (spec 06): `MonitorWorkflow` lo reemplaza como workflow principal; `HealthWorkflow` puede quedar como sonda o eliminarse en el 06.                                               |
+| El `restore` de Docker no cachea y cada build baja NuGet entero.                                                                          | Los Dockerfile copian primero los `.csproj` de `Common`, `Contracts` y el proyecto final, y corren `dotnet restore` antes de copiar el código, igual que los del repo de referencia.                                       |
+| Versiones de imagen de Temporal (`auto-setup`, `ui`) distintas de las del repo de referencia introducen diferencias de comportamiento.    | Se fijan exactamente las de `Construction.md` §3: `auto-setup:1.23.0`, `ui:2.23.0`, `postgres:15`. Sin tags `latest`.                                                                                                      |
 
 ## Qué NO entra en este spec
 
