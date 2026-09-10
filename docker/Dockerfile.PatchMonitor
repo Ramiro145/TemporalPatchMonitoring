@@ -1,0 +1,26 @@
+# Etapa base: runtime de ASP.NET
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
+WORKDIR /app
+
+# Etapa build: SDK para compilar
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+
+# Copiar primero los csproj para aprovechar la caché de restore
+COPY ./src/Common/Common.csproj ./Common/
+COPY ./src/Contracts/Contracts.csproj ./Contracts/
+COPY ./src/PatchMonitor/PatchMonitor.csproj ./PatchMonitor/
+RUN dotnet restore ./PatchMonitor/PatchMonitor.csproj
+
+# Copiar el resto del código
+COPY ./src/Common ./Common
+COPY ./src/Contracts ./Contracts
+COPY ./src/PatchMonitor ./PatchMonitor
+WORKDIR /src/PatchMonitor
+RUN dotnet publish -c Release -o /app/publish
+
+# Etapa final: imagen ligera con el worker
+FROM base AS final
+WORKDIR /app
+COPY --from=build /app/publish .
+ENTRYPOINT ["dotnet", "PatchMonitor.dll"]
