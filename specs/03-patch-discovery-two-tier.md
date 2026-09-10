@@ -1,6 +1,6 @@
 # 03 - Descubrimiento de patches en dos niveles
 
-**Estado:** Aprobado
+**Estado:** Implementado
 **Depende de:** [02-patch-lifecycle-domain-model.md](02-patch-lifecycle-domain-model.md)
 **Fecha:** 2026-09-10
 
@@ -292,34 +292,94 @@ PatchId)`; el `Namespace` sale de `DiscoveryOptions`, el `WorkflowType` de la ej
 
 ## Criterios de aceptación
 
-- [ ] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
-- [ ] `dotnet test PatchMonitor.sln` pasa con el stack de Docker **apagado** y sin descargar el
+- [x] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
+- [x] `dotnet test PatchMonitor.sln` pasa con el stack de Docker **apagado** y sin descargar el
       binario del test-server de Temporal; `test/PatchMonitor.Tests/PatchMonitor.Tests.csproj` no
-      referencia `Temporalio`.
-- [ ] `grep -rn "Temporalio\|TemporalClient" src/PatchMonitor/` devuelve coincidencias únicamente en
-      `src/PatchMonitor/Services/TemporalExecutionSource.cs`. `src/Contracts/` sigue sin ninguna.
-- [ ] `IPatchDiscovery.DiscoverAsync` devuelve un `PatchDiscoveryResult` por cada `patchId` distinto,
+      referencia `Temporalio`. (85 tests, ~2 s, con `docker compose stop`.)
+- [x] La **lógica de descubrimiento** no referencia `Temporalio`:
+      `grep -rn "Temporalio\|TemporalClient" src/Contracts/Discovery/ src/PatchMonitor/Services/PatchDiscoveryService.cs`
+      no devuelve nada. Dentro de `src/PatchMonitor/` el `using Temporalio` queda en
+      `Services/TemporalExecutionSource.cs` (adaptador) y `Activities/DiscoveryActivities.cs`
+      (la envoltura `[Activity]` necesita `Temporalio.Activities` y la
+      `ApplicationFailureException` que pide la sección Alcance) — más `Workflows/HealthWorkflow.cs`,
+      preexistente del spec 01. Ver Resultado de la implementación, desvío 1.
+- [x] `IPatchDiscovery.DiscoverAsync` devuelve un `PatchDiscoveryResult` por cada `patchId` distinto,
       con `PatchKey` armado como `namespace` (de `DiscoveryOptions`) + `workflowType` (de la
-      ejecución) + `patchId`.
-- [ ] Una ejecución cuyo search attribute `TemporalChangeVersion` trae el patch se resuelve por
-      tier 1 sin leer su historia salvo que se necesite el flag `deprecated`; una ejecución sin el
-      atributo se resuelve por tier 2 leyendo la historia — dos tests distintos, ambos en el mismo
-      barrido.
-- [ ] Un marker `core_patch` con `deprecated = true` produce `MarkerPresence.PresentDeprecated` y uno
+      ejecución) + `patchId`. Verificado en vivo: `default / ProbeWorkflow / probe_patch`.
+- [x] Tier 1 (search attribute) y tier 2 (Event History) cubiertos por tests distintos en el mismo
+      barrido. **En vivo, contra el stack de referencia, tier 1 no aporta nada**: el
+      `ListWorkflowExecutions` de la standard visibility sobre Postgres devuelve
+      `SearchAttributes = null`, así que el descubrimiento degrada a tier‑2‑completo sin romperse
+      (fila prevista en Riesgos identificados). Tier 2 verificado en vivo. Ver desvío 2.
+- [x] Un marker `core_patch` con `deprecated = true` produce `MarkerPresence.PresentDeprecated` y uno
       con `deprecated = false` produce `Present` — test con nombre explícito para la distinción.
-- [ ] Una ejecución **abierta** cuya historia se leyó completa y no tiene marker `core_patch` entra
+- [x] Una ejecución **abierta** cuya historia se leyó completa y no tiene marker `core_patch` entra
       como `MarkerPresence.Absent`; el `CoexistenceToDeprecatedGate` del spec 02 la ve como
       bloqueante.
-- [ ] Con `ExecutionListPage.LimitReached = true`, **todos** los `ExecutionSnapshotSet` salen con
+- [x] Con `ExecutionListPage.LimitReached = true`, **todos** los `ExecutionSnapshotSet` salen con
       `IsTruncated = true`. Con `MaxHistories` alcanzado, solo los patches con alguna ejecución en
       `MarkerPresence.Unknown` salen truncados.
-- [ ] Una excepción al leer la historia de una ejecución deja esa ejecución en `Unknown` y su patch
+- [x] Una excepción al leer la historia de una ejecución deja esa ejecución en `Unknown` y su patch
       con `IsTruncated = true`, sin abortar el descubrimiento de los demás patches.
-- [ ] `DiscoveryOptions.FromEnvironment()` devuelve los defaults `default` / `7` / `500` / `200` con
+- [x] `DiscoveryOptions.FromEnvironment()` devuelve los defaults `default` / `7` / `500` / `200` con
       las env vars ausentes, y respeta cada una cuando está seteada con un valor válido.
-- [ ] El `patch-monitor-worker` del `docker-compose.yml` declara `DISCOVERY_LOOKBACK_DAYS`,
+- [x] El `patch-monitor-worker` del `docker-compose.yml` declara `DISCOVERY_LOOKBACK_DAYS`,
       `DISCOVERY_MAX_EXECUTIONS` y `DISCOVERY_MAX_HISTORIES`, y el worker arranca con
-      `DiscoveryActivities` registrada.
+      `DiscoveryActivities` registrada (`docker compose config` válido; test de registro en DI).
+
+## Resultado de la implementación
+
+Implementado el 2026-09-10 en la rama `spec-03-patch-discovery-two-tier`. Suite: **85 tests**
+(53 del spec 02 + 32 nuevos: `DiscoveryOptionsTests` 9, `PatchDiscoveryServiceTests` 22,
+`DiscoveryRegistrationTests` 1), en verde con el stack de Docker detenido.
+
+**Verificación end-to-end (paso 9).** Contra el stack de `docker/` con un `ProbeWorkflow`
+descartable parcheado (`Workflow.Patched("probe_patch")`) y una ejecución viva en el namespace
+`default`:
+
+- `DiscoverAsync` completó en ~80 ms — **sin colgarse** — y devolvió
+  `[default / ProbeWorkflow / probe_patch] IsTruncated=False snapshots=1` con la ejecución en
+  `status=Running marker=Present`.
+- `ReadPatchMarkersAsync("probe-live-1")` → `patchId=probe_patch deprecated=False`, leído del
+  detail `patch-data` del marker `core_patch`.
+- El estado inicial (sin patches vivos) devolvió `0 patch(es)` sin error.
+
+**Desvíos respecto de la spec (resueltos durante la implementación):**
+
+1. **`DiscoveryActivities` referencia `Temporalio`.** El criterio de aceptación decía "únicamente en
+   `TemporalExecutionSource.cs`", pero la propia sección Alcance manda que la Activity relance
+   `ApplicationFailureException(nonRetryable: true)` —un tipo de `Temporalio.Exceptions`— y toda
+   clase `[Activity]` necesita `Temporalio.Activities`. La **lógica** de descubrimiento
+   (`PatchDiscoveryService`, todo `Contracts/Discovery/`) sí queda Temporalio‑free. `HealthWorkflow`
+   y `IHealthWorkflow` con `using Temporalio.Workflows` son del spec 01 y los reemplaza el spec 06.
+
+2. **Tier 1 inerte en el backend de visibility del repo de referencia.** El `ListWorkflowExecutions`
+   de la standard visibility sobre Postgres (`temporalio/auto-setup:1.23.0`, sin Elasticsearch)
+   devuelve `SearchAttributes = null` en cada ejecución del listado, aunque `DescribeWorkflowExecution`
+   sí trae `TemporalChangeVersion`. Es la fragilidad exacta de `Construction.md` §4 restricción #1 y
+   de la fila "el namespace no tiene registrado `TemporalChangeVersion`" de Riesgos. El diseño de
+   dos niveles **degrada a tier‑2‑completo sin romperse** (verificado en vivo). Recuperar tier 1
+   contra un backend rico (Elasticsearch) o vía `Describe` por ejecución queda para el spec 09.
+
+3. **El adaptador usa gRPC crudo, no el wrapper de alto nivel.**
+   `client.ListWorkflowsAsync(...)` del SDK 1.9.0 no expone los search attributes de sistema, así
+   que `ListExecutionsAsync` llama a `WorkflowService.ListWorkflowExecutionsAsync` y lee
+   `info.SearchAttributes.IndexedFields["TemporalChangeVersion"]` (payload `json/plain` = array de
+   strings). `ReadPatchMarkersAsync` ya usaba `GetWorkflowExecutionHistoryAsync` crudo.
+
+4. **Formato real del marker `core_patch`.** El sdk-core no guarda `patch_id` + `deprecated` como
+   claves separadas sino un único detail `patch-data` con payload
+   `{"id":"<patchId>","deprecated":<bool>}`. `TryReadPatchData` lo parsea con `System.Text.Json`.
+
+5. **Query de cerradas.** La standard visibility rechaza `ExecutionStatus != 'Running'` y exige
+   `StartTime BETWEEN '<desde>' AND '<hasta>'` (no `>`). La segunda query quedó como
+   `StartTime BETWEEN <now-lookback> AND <now+1d>`, deduplicada por `runId` contra la de abiertas.
+
+6. **Tests del servicio reescritos para el modelo de fusión del paso 5.** Los dos casos que
+   codificaban semántica de "solo tier 1" (`todavía no aparece`, `no lee la Event History`) se
+   reemplazaron: el servicio lee la historia de toda ejecución para resolver el flag `deprecated`,
+   y tier 1 pasó a ser la garantía de que un patch no se pierda (`Present` en vez de `Unknown`) si
+   esa lectura se saltea o falla.
 
 ## Decisiones tomadas y descartadas
 
