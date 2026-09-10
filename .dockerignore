@@ -1,0 +1,7 @@
+obj/
+bin/
+.vs/
+*.user
+.git/
+docker-compose.override.yml
+Dockerfile.*
