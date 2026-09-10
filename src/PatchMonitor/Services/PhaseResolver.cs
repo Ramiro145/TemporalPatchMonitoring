@@ -48,7 +48,24 @@ public sealed class PhaseResolver : IPhaseResolver
 
         var withMarker = snaps.Where(HasMarker).ToList();
 
-        // Caso 3 (fase Clean) — se agrega en el paso 5.
+        // Caso 3: código limpio. Exige AMBAS condiciones: que no quede ninguna ejecución
+        // ABIERTA con marker (si queda, el patch sigue en fase 2) y evidencia POSITIVA de
+        // código nuevo — una ejecución sin marker arrancada más de CleanGrace después del
+        // último marker. Sin la segunda condición, un patch cuyas ejecuciones con marker
+        // simplemente drenaron se leería como Clean de más.
+        if (withMarker.Count > 0 && !withMarker.Any(s => s.Status.IsOpen()))
+        {
+            var lastMarkerStart = withMarker.Max(s => s.StartTime);
+            var cutoff = lastMarkerStart + _options.CleanGrace;
+
+            if (snaps.Any(s => s.Marker == MarkerPresence.Absent && s.StartTime > cutoff))
+            {
+                return Inferred(
+                    PatchPhase.Clean,
+                    $"sin marker desde {lastMarkerStart:o}; código limpio",
+                    now);
+            }
+        }
 
         if (withMarker.Count > 0)
         {
