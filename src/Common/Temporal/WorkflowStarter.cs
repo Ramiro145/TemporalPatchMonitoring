@@ -22,7 +22,8 @@ namespace Common
 
             var handle = await client.StartWorkflowAsync<TWorkflow, TResult>(
                 workflowCall,
-                new WorkflowOptions(taskQueue, workflowId)
+                // WorkflowOptions(string id, string taskQueue): el id va primero.
+                new WorkflowOptions(workflowId, taskQueue)
             );
 
             Console.WriteLine($"Workflow started: {handle.Id}");
@@ -43,7 +44,8 @@ namespace Common
 
             var handle = await client.StartWorkflowAsync<TWorkflow>(
                 workflowCall,
-                new WorkflowOptions(taskQueue, workflowId)
+                // WorkflowOptions(string id, string taskQueue): el id va primero.
+                new WorkflowOptions(workflowId, taskQueue)
             );
 
             Console.WriteLine($"Workflow started: {handle.Id}");

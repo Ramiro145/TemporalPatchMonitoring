@@ -1,6 +1,6 @@
 # 01 - Scaffolding de la solución y stack de Docker
 
-**Estado:** Aprobado
+**Estado:** Implementado
 **Depende de:** -
 **Fecha:** 2026-09-10
 
@@ -271,24 +271,75 @@ temporal`). Sin SQL Server ni `db-init`. Commit.
 
 ## Criterios de aceptación
 
-- [ ] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
-- [ ] La solución tiene exactamente 4 proyectos (`Contracts`, `Common`, `PatchMonitor`,
+- [x] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
+- [x] La solución tiene exactamente 4 proyectos (`Contracts`, `Common`, `PatchMonitor`,
       `MonitorApi`), todos `net8.0` y todos con `PackageReference Include="Temporalio" Version="1.9.0"`.
-- [ ] `grep -ri "mssql\|SqlConnection\|Data.SqlClient" src/ docker/` no devuelve ninguna coincidencia.
-- [ ] `src/Common/Temporal/` contiene `WorkerHost.cs`, `WorkflowStarter.cs` y `WorkflowValidator.cs`
+- [x] `grep -ri "mssql\|SqlConnection\|Data.SqlClient" src/ docker/` no devuelve ninguna coincidencia.
+- [x] `src/Common/Temporal/` contiene `WorkerHost.cs`, `WorkflowStarter.cs` y `WorkflowValidator.cs`
       con la misma lógica que el repo de referencia (drenaje SIGTERM + Ctrl+C,
       `GracefulShutdownTimeout` de 30 s, `WorkflowValidator` distinguiendo `"no rows in result set"`).
       No hay `ScheduleBootstrapper`.
-- [ ] `docker compose -p patchmonitor up -d` deja los 5 servicios `Up` y `temporal-db` `healthy`; no
+- [x] `docker compose -p patchmonitor up -d` deja los 5 servicios `Up` y `temporal-db` `healthy`; no
       hay ningún servicio de SQL Server.
-- [ ] La Temporal UI responde en `http://localhost:8234` y Temporal en `localhost:7234`.
-- [ ] `GET http://localhost:5100/health` devuelve `200` con `temporal: "ok"`.
-- [ ] `POST http://localhost:5100/health/workflow` crea una ejecución de `HealthWorkflow` que termina
+- [x] La Temporal UI responde en `http://localhost:8234` y Temporal en `localhost:7234`.
+- [x] `GET http://localhost:5100/health` devuelve `200` con `temporal: "ok"`.
+- [x] `POST http://localhost:5100/health/workflow` crea una ejecución de `HealthWorkflow` que termina
       en `Completed` con resultado `"patch-monitor alive"`, visible en la UI.
-- [ ] `docker compose stop patch-monitor-worker` produce el log de drenaje y `Worker stopped
+- [x] `docker compose stop patch-monitor-worker` produce el log de drenaje y `Worker stopped
     cleanly.` en menos de 45 s (drenaje ordenado verificado).
-- [ ] Con un stack de `ReleaseOrderDemo` corriendo en paralelo, levantar este stack no colisiona en
+- [x] Con un stack de `ReleaseOrderDemo` corriendo en paralelo, levantar este stack no colisiona en
       puertos ni en nombres de contenedor.
+
+## Resultado de la implementación
+
+Verificado el 2026-09-10 sobre Docker 28.5.1, SDK .NET 10.0.302 (el `net8.0` compila con el
+reference pack de NuGet; no hace falta el SDK 8).
+
+**Salida de la verificación end-to-end (paso 9):**
+
+- `dotnet build PatchMonitor.sln` → `Compilación correcta. 0 Advertencia(s) 0 Errores`.
+- `docker compose build --no-cache` → `patchmonitor-patch-monitor-worker Built`,
+  `patchmonitor-monitor-api Built`.
+- `docker compose up -d` + `docker compose ps` → 5 servicios `Up`; `temporal-db` y `temporal`
+  `healthy`. Sin servicios de SQL Server.
+- `docker compose logs patch-monitor-worker` → `Worker listening on 'patch-monitor-task-queue'...`.
+- `curl :5100/health` → `200` `{"temporal":"ok","targetNamespace":"default","taskQueue":"patch-monitor-task-queue"}`.
+- `curl :8234` (Temporal UI) → `200`. Temporal escuchando en `:7234`.
+- `curl -X POST :5100/health/workflow` → `{"workflowId":"health-workflow-63e3c027-…"}`; la ejecución
+  arranca con `WorkflowType=HealthWorkflow` en `TaskQueue=patch-monitor-task-queue`, llega a
+  `WorkflowExecutionCompleted` con `Result: ["patch-monitor alive"]`.
+- `docker compose stop patch-monitor-worker` → logs
+  `Worker draining (SIGTERM received), waiting up to 30s for in-flight activities...` y
+  `Worker stopped cleanly.`, en ~1 s (< 45 s).
+- Con el stack de `ReleaseOrderDemo` levantado en paralelo (`temporal` / `temporal_db` /
+  `temporal-ui` / `order_api` en `7233` / `5432` / `8233` / `5000-5001`), `docker compose up -d` de
+  este proyecto (`7234` / `5433` / `8234` / `5100`, contenedores `patchmonitor-*`) no reportó
+  colisión de puertos ni de nombres.
+
+**Desviaciones respecto del plan (resueltas durante la implementación):**
+
+1. **`WorkflowStarter` modificado** (además del "portar sin cambios" del paso 3):
+   - Los dos `StartAsync` pasan de `Task` a `Task<string>` y devuelven `handle.Id`, para que
+     `MonitorApi` exponga el `workflowId` en `POST /health/workflow`.
+   - **Corrección de bug heredado del `WorkerFlowStarter.cs` de referencia:** la llamada era
+     `new WorkflowOptions(taskQueue, workflowId)` con los argumentos invertidos respecto del
+     constructor real `WorkflowOptions(string id, string taskQueue)`. Efecto: el workflow quedaba en
+     una task queue inexistente y nunca completaba. Corregido a `new WorkflowOptions(workflowId, taskQueue)`.
+2. **Healthcheck en el servicio `temporal`** (`tctl --address temporal:7233 workflow list`) y
+   `depends_on: { temporal: { condition: service_healthy } }` en `patch-monitor-worker` y
+   `monitor-api`. La tabla de Riesgos asumía que `depends_on: temporal` + reintentos de
+   `ConnectAsync` bastaban, pero `WorkerHost.ConnectAsync` no reintenta y el bridge nativo de
+   Temporalio mata el proceso (`exit 139`) ante "connection refused" durante el arranque de
+   `auto-setup`. El healthcheck hace que el worker y la API esperen a que Temporal acepte conexiones.
+3. **Sin `container_name:` explícito** en el `docker-compose.yml` (el de referencia sí los fija). Con
+   `name: patchmonitor`, Compose prefija los contenedores como `patchmonitor-*`, evitando la
+   colisión de nombres con `ReleaseOrderDemo` (que usa `container_name: temporal`, etc.).
+4. **`MONITOR_TASK_QUEUE` fijada explícitamente** en ambos servicios del compose (con su valor
+   default), coherente con "el stack de Docker las fija explícitamente" del Modelo de datos.
+5. **`MonitorApi` conecta el `TemporalClient` de forma perezosa** (en el primer request, vía factory
+   singleton). Durante la ventana en que Temporal arranca pero aún no acepta conexiones, `/health`
+   podría devolver `500` en vez de `unreachable`; una conexión con reintento explícito queda para un
+   spec posterior.
 
 ## Decisiones tomadas y descartadas
 

@@ -21,6 +21,17 @@ services:
       - "7234:7233"   # externo 7234 → interno 7233 (ReleaseOrderDemo publica 7233)
     volumes:
       - ./dynamicconfig:/etc/temporal/config/dynamicconfig
+    # auto-setup deja el contenedor "arriba" decenas de segundos antes de que el
+    # frontend acepte conexiones. Sin esto, patch-monitor-worker conecta al arranque,
+    # el bridge nativo de Temporalio recibe "connection refused" y mata el proceso
+    # (exit 139); WorkerHost.ConnectAsync no reintenta. El healthcheck + depends_on
+    # condition: service_healthy hace que worker y API esperen a que Temporal responda.
+    healthcheck:
+      test: ["CMD", "tctl", "--address", "temporal:7233", "workflow", "list"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 10s
 
   temporal-db:
     image: postgres:15
@@ -60,7 +71,8 @@ services:
       - TARGET_TEMPORAL_HOST=temporal:7233
       - TARGET_TEMPORAL_NAMESPACE=default
     depends_on:
-      - temporal
+      temporal:
+        condition: service_healthy
 
   monitor-api:
     build:
@@ -74,7 +86,8 @@ services:
       - TARGET_TEMPORAL_HOST=temporal:7233
       - TARGET_TEMPORAL_NAMESPACE=default
     depends_on:
-      - temporal
+      temporal:
+        condition: service_healthy
 
 volumes:
   temporal_data:
