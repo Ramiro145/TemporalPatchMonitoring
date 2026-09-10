@@ -20,6 +20,13 @@ namespace PatchMonitor.Workflows;
 [Workflow]
 public class PatchStateWorkflow : IPatchStateWorkflow
 {
+    private static readonly PatchPhase[] ValidOverridePhases =
+    {
+        PatchPhase.Coexistence,
+        PatchPhase.Deprecated,
+        PatchPhase.Clean,
+    };
+
     private StateOptions _options = null!;
     private PatchState _state = null!;
 
@@ -95,6 +102,21 @@ public class PatchStateWorkflow : IPatchStateWorkflow
 
     [WorkflowQuery]
     public PatchState GetState() => _state;
+
+    /// <summary>
+    /// Rechaza de forma sincrónica un override cuya fase no esté en
+    /// <c>{Coexistence, Deprecated, Clean}</c>. Al lanzar acá el update ni siquiera entra a
+    /// la Event History y el estado del entity queda intacto.
+    /// </summary>
+    [WorkflowUpdateValidator(nameof(SetOverrideAsync))]
+    public void ValidateSetOverride(PhaseOverride ov)
+    {
+        if (Array.IndexOf(ValidOverridePhases, ov.Phase) < 0)
+        {
+            throw new ArgumentException(
+                $"Fase de override inválida: {ov.Phase}. Debe ser Coexistence, Deprecated o Clean.");
+        }
+    }
 
     [WorkflowUpdate]
     public Task<PatchState> SetOverrideAsync(PhaseOverride ov)

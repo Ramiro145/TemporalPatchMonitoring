@@ -4,6 +4,7 @@ using Contracts.State;
 using Contracts.Workflows;
 using PatchMonitor.Workflows;
 using Temporalio.Client;
+using Temporalio.Exceptions;
 using Temporalio.Testing;
 using Temporalio.Worker;
 using Xunit;
@@ -114,6 +115,70 @@ public class PatchStateWorkflowTests
             Assert.Equal(GateOutcome.Blocked, state.PreviousVerdict?.Outcome);
             Assert.Equal(2, state.History.Count);
             Assert.Equal(T0.AddMinutes(10), state.LastChangedAt);
+        });
+    }
+
+    [Fact]
+    public async Task SetOverride_a_deprecated_fuerza_la_fase_y_la_fuente()
+    {
+        await RunAsync(async handle =>
+        {
+            await handle.SignalAsync(wf => wf.RecordAssessmentAsync(
+                Assessment(PatchPhase.Coexistence,
+                    Verdict(GateOutcome.Blocked, PatchPhase.Coexistence, PatchPhase.Deprecated, T0), T0)));
+
+            var ov = new PhaseOverride(Key, PatchPhase.Deprecated, "operador", T0.AddMinutes(1), null);
+            await handle.ExecuteUpdateAsync(wf => wf.SetOverrideAsync(ov));
+
+            var state = await handle.QueryAsync(wf => wf.GetState());
+
+            Assert.Equal(PatchPhase.Deprecated, state.Phase);
+            Assert.Equal(PhaseSource.Override, state.Source);
+            Assert.Equal(ov, state.Override);
+        });
+    }
+
+    [Fact]
+    public async Task SetOverride_con_fase_unknown_es_rechazado_y_el_estado_no_cambia()
+    {
+        await RunAsync(async handle =>
+        {
+            await handle.SignalAsync(wf => wf.RecordAssessmentAsync(
+                Assessment(PatchPhase.Coexistence,
+                    Verdict(GateOutcome.Blocked, PatchPhase.Coexistence, PatchPhase.Deprecated, T0), T0)));
+
+            var invalid = new PhaseOverride(Key, PatchPhase.Unknown, "operador", T0.AddMinutes(1), null);
+
+            await Assert.ThrowsAsync<WorkflowUpdateFailedException>(
+                () => handle.ExecuteUpdateAsync(wf => wf.SetOverrideAsync(invalid)));
+
+            var state = await handle.QueryAsync(wf => wf.GetState());
+
+            Assert.Equal(PatchPhase.Coexistence, state.Phase);
+            Assert.Equal(PhaseSource.Inferred, state.Source);
+            Assert.Null(state.Override);
+        });
+    }
+
+    [Fact]
+    public async Task ClearOverride_devuelve_el_estado_a_la_fase_inferida_en_el_siguiente_assessment()
+    {
+        await RunAsync(async handle =>
+        {
+            var ov = new PhaseOverride(Key, PatchPhase.Deprecated, "operador", T0, null);
+            await handle.ExecuteUpdateAsync(wf => wf.SetOverrideAsync(ov));
+            await handle.ExecuteUpdateAsync(wf => wf.ClearOverrideAsync());
+
+            await handle.SignalAsync(wf => wf.RecordAssessmentAsync(
+                Assessment(PatchPhase.Coexistence,
+                    Verdict(GateOutcome.Blocked, PatchPhase.Coexistence, PatchPhase.Deprecated, T0.AddMinutes(5)),
+                    T0.AddMinutes(5))));
+
+            var state = await handle.QueryAsync(wf => wf.GetState());
+
+            Assert.Equal(PatchPhase.Coexistence, state.Phase);
+            Assert.Equal(PhaseSource.Inferred, state.Source);
+            Assert.Null(state.Override);
         });
     }
 }
