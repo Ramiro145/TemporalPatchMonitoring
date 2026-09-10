@@ -10,6 +10,7 @@ namespace PatchMonitor.Tests.State;
 /// y restaura las tres variables para no filtrar estado entre tests ni al entorno de
 /// desarrollo.
 /// </summary>
+[Collection(EnvVarCollection.Name)]
 public class StateOptionsTests
 {
     private const string ThresholdVar = "PATCH_STATE_CAN_THRESHOLD";

@@ -14,8 +14,10 @@ namespace PatchMonitor.Workflows;
 /// tupla <c>(Phase, Verdict.Outcome, Verdict.NextPhase)</c> cambia.
 /// </summary>
 /// <remarks>
-/// El <c>Continue-As-New</c> que mantiene la ejecución acotada llega en un paso posterior de
-/// este spec; por ahora <see cref="RunAsync"/> se limita a hidratar el estado y esperar.
+/// La ejecución nunca cierra por sí sola (es un entity workflow): <see cref="RunAsync"/> hace
+/// <c>Continue-As-New</c> cuando <see cref="PatchState.AssessmentCount"/> supera
+/// <see cref="StateOptions.ContinueAsNewThreshold"/> y no queda ningún handler en vuelo,
+/// arrastrando el estado recortado por <see cref="PatchState.ForCarryover"/>.
 /// </remarks>
 [Workflow]
 public class PatchStateWorkflow : IPatchStateWorkflow
@@ -38,9 +40,14 @@ public class PatchStateWorkflow : IPatchStateWorkflow
         _options = StateOptions.FromEnvironment();
         _state = carryover ?? PatchState.Initial(key);
 
-        // Entity workflow: se mantiene abierto indefinidamente. El Continue-As-New por
-        // umbral se agrega más adelante en este spec.
-        await Workflow.WaitConditionAsync(() => false);
+        // Se espera al umbral de assessments Y a que no haya handlers en vuelo: un
+        // Continue-As-New con un update de override a medio aplicar perdería la actualización.
+        await Workflow.WaitConditionAsync(
+            () => _state.AssessmentCount >= _options.ContinueAsNewThreshold
+                  && Workflow.AllHandlersFinished);
+
+        throw Workflow.CreateContinueAsNewException(
+            (IPatchStateWorkflow wf) => wf.RunAsync(key, _state.ForCarryover(_options.HistoryLimit)));
     }
 
     [WorkflowSignal]
