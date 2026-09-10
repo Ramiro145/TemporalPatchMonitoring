@@ -9,9 +9,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Dominio puro: sin Temporalio. El paquete entra en el spec 05, junto con
-         el primer test de time-skipping. -->
+    <!-- Los tests de State/ corren workflows sobre WorkflowEnvironment.StartTimeSkippingAsync.
+         El binario del test-server se descarga una sola vez en la primera corrida de
+         dotnet test y queda cacheado en el perfil de usuario (ver CLAUDE.md). -->
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="Temporalio" Version="1.9.0" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
   </ItemGroup>
