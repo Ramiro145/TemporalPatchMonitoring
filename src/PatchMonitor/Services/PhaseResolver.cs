@@ -6,8 +6,8 @@ namespace PatchMonitor.Services;
 
 /// <summary>
 /// Implementación de <see cref="IPhaseResolver"/>: interpreta los markers de los snapshots del
-/// spec 03 como una fase del ciclo de vida del patch. Cómputo puro, sin <c>using Temporalio</c>
-/// y sin I/O contra el cluster.
+/// spec 03 como una fase del ciclo de vida del patch. Cómputo puro, sin acoplarse al SDK de
+/// Temporal y sin I/O contra el cluster.
 /// </summary>
 /// <remarks>
 /// Un redeploy que ya pasó a <c>DeprecatePatch</c> pero todavía no arrancó ninguna ejecución

@@ -1,5 +1,6 @@
 using Contracts.Discovery;
 using Contracts.Domain.Gates;
+using Contracts.Phase;
 using Microsoft.Extensions.DependencyInjection;
 using PatchMonitor.Activities;
 using PatchMonitor.Services;
@@ -26,7 +27,16 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IPatchDiscovery, PatchDiscoveryService>();
         services.AddSingleton<DiscoveryActivities>();
 
-        // IPhaseResolver, INotifier, IDecisionSink llegan en los specs 04+.
+        // Resolución de fase (spec 04). Cómputo puro sin I/O ⇒ singleton. El override vive en
+        // memoria hasta el spec 05; TimeProvider.System da el reloj real y FakeTimeProvider lo
+        // sustituye en tests. PhaseActivities se resuelve por tipo concreto desde WorkerHost.
+        services.AddSingleton(_ => PhaseOptions.FromEnvironment());
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<IPhaseOverrideStore, InMemoryPhaseOverrideStore>();
+        services.AddSingleton<IPhaseResolver, PhaseResolver>();
+        services.AddSingleton<PhaseActivities>();
+
+        // INotifier, IDecisionSink llegan en los specs 05+.
         return services;
     }
 }

@@ -15,4 +15,4 @@ var provider = services.BuildServiceProvider();
 await WorkerHost.RunAsync<HealthWorkflow>(
     taskQueue,
     provider,
-    activityTypes: new[] { typeof(DiscoveryActivities) });
+    activityTypes: new[] { typeof(DiscoveryActivities), typeof(PhaseActivities) });
