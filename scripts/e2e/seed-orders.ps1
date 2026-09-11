@@ -11,7 +11,11 @@ param(
     [Parameter(Mandatory = $true)]
     [int]$Count,
 
-    [string]$BaseUrl = "http://localhost:5000"
+    [string]$BaseUrl = "http://localhost:5000",
+
+    # Producto con stock disponible en el seed de ReleaseOrderDemo (ProductId 1 se agota
+    # rápido en corridas repetidas de e2e).
+    [int]$ProductId = 2
 )
 
 $orderIds = @()
@@ -20,7 +24,7 @@ for ($i = 1; $i -le $Count; $i++) {
     $body = @{
         orderCode = "e2e-$(Get-Date -Format 'yyyyMMddHHmmssfff')-$i"
         quantity  = 1
-        productId = 1
+        productId = $ProductId
         amount    = 10.0
         address   = "E2E test address"
     } | ConvertTo-Json

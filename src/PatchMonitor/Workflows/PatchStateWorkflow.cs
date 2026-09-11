@@ -29,17 +29,27 @@ public class PatchStateWorkflow : IPatchStateWorkflow
         PatchPhase.Clean,
     };
 
-    private StateOptions _options = null!;
-    private PatchState _state = null!;
+    private readonly StateOptions _options;
+    private PatchState _state;
 
-    [WorkflowRun]
-    public async Task RunAsync(PatchKey key, PatchState? carryover)
+    /// <summary>
+    /// Corre antes que cualquier signal/update, incluido uno entregado por
+    /// <c>signal-with-start</c> en la misma tanda que el arranque: sin este constructor,
+    /// <see cref="RecordAssessmentAsync"/> podía ejecutar con <c>_state</c> todavía en su
+    /// default y tirar <see cref="NullReferenceException"/>.
+    /// </summary>
+    [WorkflowInit]
+    public PatchStateWorkflow(PatchKey key, PatchState? carryover)
     {
         // Se lee una vez por ejecución. Tras un Continue-As-New la nueva instancia
         // vuelve a leer el entorno, así un cambio de umbral aplica sin redeploy del código.
         _options = StateOptions.FromEnvironment();
         _state = carryover ?? PatchState.Initial(key);
+    }
 
+    [WorkflowRun]
+    public async Task RunAsync(PatchKey key, PatchState? carryover)
+    {
         // Se espera al umbral de assessments Y a que no haya handlers en vuelo: un
         // Continue-As-New con un update de override a medio aplicar perdería la actualización.
         await Workflow.WaitConditionAsync(

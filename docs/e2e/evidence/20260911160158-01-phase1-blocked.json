@@ -1,0 +1,95 @@
+﻿{
+    "label":  "01-phase1-blocked",
+    "timestamp":  "2026-09-11T22:01:58.0716886Z",
+    "list":  {
+                 "count":  1,
+                 "truncated":  false,
+                 "patches":  [
+                                 {
+                                     "namespace":  "default",
+                                     "workflowType":  "ReleaseOrderWorkflow",
+                                     "patchId":  "audit-before-decision",
+                                     "phase":  1,
+                                     "source":  0,
+                                     "outcome":  1,
+                                     "nextPhase":  2,
+                                     "blockingExecutionCount":  2,
+                                     "hasOverride":  false,
+                                     "revision":  3,
+                                     "lastObservedAt":  "2026-09-11T22:01:48.1809546+00:00",
+                                     "lastChangedAt":  "2026-09-11T22:01:48.1809546+00:00"
+                                 }
+                             ]
+             },
+    "details":  [
+                    {
+                        "summary":  {
+                                        "namespace":  "default",
+                                        "workflowType":  "ReleaseOrderWorkflow",
+                                        "patchId":  "audit-before-decision",
+                                        "phase":  1,
+                                        "source":  0,
+                                        "outcome":  1,
+                                        "nextPhase":  2,
+                                        "blockingExecutionCount":  2,
+                                        "hasOverride":  false,
+                                        "revision":  3,
+                                        "lastObservedAt":  "2026-09-11T22:01:48.1809546+00:00",
+                                        "lastChangedAt":  "2026-09-11T22:01:48.1809546+00:00"
+                                    },
+                        "phaseReason":  "marker más reciente sin deprecar",
+                        "lastVerdict":  {
+                                            "outcome":  1,
+                                            "currentPhase":  1,
+                                            "nextPhase":  2,
+                                            "blockingExecutionCount":  2,
+                                            "blockingSample":  [
+                                                                   "release-order-8017",
+                                                                   "release-order-8016"
+                                                               ],
+                                            "reason":  "2 ejecución(es) pre-patch abiertas sin el marker",
+                                            "evaluatedAt":  "2026-09-11T22:01:48.1748599+00:00"
+                                        },
+                        "previousVerdict":  {
+                                                "outcome":  2,
+                                                "currentPhase":  1,
+                                                "nextPhase":  2,
+                                                "blockingExecutionCount":  0,
+                                                "blockingSample":  [
+
+                                                                   ],
+                                                "reason":  "no quedan ejecuciones pre-patch abiertas",
+                                                "evaluatedAt":  "2026-09-11T22:00:00.1891219+00:00"
+                                            },
+                        "override":  null,
+                        "assessmentCount":  4,
+                        "notifiedRevision":  3,
+                        "history":  [
+                                        {
+                                            "at":  "2026-09-11T21:50:14.7940718+00:00",
+                                            "fromPhase":  0,
+                                            "toPhase":  1,
+                                            "fromOutcome":  null,
+                                            "toOutcome":  1,
+                                            "reason":  "marker más reciente sin deprecar"
+                                        },
+                                        {
+                                            "at":  "2026-09-11T22:00:00.1958429+00:00",
+                                            "fromPhase":  1,
+                                            "toPhase":  1,
+                                            "fromOutcome":  1,
+                                            "toOutcome":  2,
+                                            "reason":  "marker más reciente sin deprecar"
+                                        },
+                                        {
+                                            "at":  "2026-09-11T22:01:48.1809546+00:00",
+                                            "fromPhase":  1,
+                                            "toPhase":  1,
+                                            "fromOutcome":  2,
+                                            "toOutcome":  1,
+                                            "reason":  "marker más reciente sin deprecar"
+                                        }
+                                    ]
+                    }
+                ]
+}

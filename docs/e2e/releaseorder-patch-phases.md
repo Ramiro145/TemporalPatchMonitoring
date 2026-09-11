@@ -17,6 +17,38 @@ Ubicación del bloque en todas las fases: inmediatamente antes de
 `_status = "Waiting for release decision";` / `await Workflow.WaitConditionAsync(...)` en
 `RunAsync(int orderId)`.
 
+> **Nota operativa (ejecución real del 2026-09-11):** el bloque de la fase 1 mostrado abajo es el
+> texto literal de la spec 04, pero **no** es el que se terminó aplicando en el worker real. El
+> código "limpio" que ya corría en `ReleaseOrderDemo` (fase 3 de su propio ciclo) llama a
+> `RecordAwaitingDecisionAsync` **incondicionalmente** — no hay ningún código "viejo sin la
+> llamada" al que el `else` original pudiera volver. Aplicar el `else` literal (que no hace nada)
+> sobre ejecuciones ya abiertas con esa historia produjo un `NonDeterminismError` real al
+> drenarlas (`[TMPRL1100] No command scheduled for event ... ActivityTaskScheduled`): dos órdenes
+> de prueba (`release-order-8009`, `release-order-8010`) quedaron irrecuperables y se terminaron
+> (`temporal workflow terminate`). El bloque efectivamente desplegado agregó la misma llamada
+> también en el `else`, para que la secuencia de comandos sea idéntica a la que el código limpio ya
+> emitía — la única diferencia observable entre las ramas queda en el marker, que es todo lo que el
+> monitor necesita para distinguir pre-patch de post-patch:
+>
+> ```csharp
+> if (Workflow.Patched("audit-before-decision"))
+> {
+>     await Workflow.ExecuteActivityAsync(
+>         (AuditActivities a) => a.RecordAwaitingDecisionAsync(orderId),
+>         DefaultOptions);
+> }
+> else
+> {
+>     await Workflow.ExecuteActivityAsync(
+>         (AuditActivities a) => a.RecordAwaitingDecisionAsync(orderId),
+>         DefaultOptions);
+> }
+> ```
+>
+> Esto es específico de reintroducir el patch sobre un repo que ya completó su propio ciclo de vida
+> real una vez; no es una corrección al texto de la spec 04 original (que sigue siendo correcto
+> para un primer despliegue genuino del patch, sobre código que de verdad no llamaba la Activity).
+
 ## Fase 1 — `Workflow.Patched` (spec 04 de `ReleaseOrderDemo`)
 
 ```csharp

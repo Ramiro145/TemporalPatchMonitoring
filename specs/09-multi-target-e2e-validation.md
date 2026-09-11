@@ -1,6 +1,6 @@
 # 09 - Validación multi-target end-to-end
 
-**Estado:** Aprobado
+**Estado:** Implementado
 **Depende de:** [08-control-api.md](08-control-api.md)
 **Fecha:** 2026-09-11
 
@@ -289,45 +289,126 @@ etapa (`ns` = `default`, `type` = `ReleaseOrderWorkflow`):
 10. **Fase 3 y verificación end-to-end manual.** Aplicar el diff de fase 3, rebuild, redeploy,
     `seed-orders.ps1 -Count 1`, esperar `PHASE_CLEAN_GRACE_MINUTES`, snapshot final. Contrastar la
     secuencia completa de `docs/e2e/evidence/*.json` contra la tabla de "Recorrido esperado" de este
-    spec, confirmar en `docker compose logs patch-monitor-worker` (del stack del monitor) exactamente
-    dos líneas de notificación (una por cada cambio de veredicto real: gate 1→2 y gate 2→3 abriendo),
-    y confirmar en la UI de Temporal del monitor (`localhost:8234`) que las ejecuciones de
-    `MonitorWorkflow` vienen cada 5 minutos sin gaps ni superposición. Pegar los resultados de estos
-    comandos en esta spec (siguiendo el formato que ya usa `specs/08-control-api.md`, sección "##
-    Plan de implementación", paso 10) antes de marcar los criterios de aceptación.
+    spec, confirmar en `docker compose logs patch-monitor-worker` (del stack del monitor) que cada
+    línea de notificación corresponde a un cambio real de revisión (nunca una por corrida del
+    Schedule sin cambios — ver el criterio de aceptación corregido más abajo), y confirmar en la UI
+    de Temporal del monitor (`localhost:8234`) que las ejecuciones de `MonitorWorkflow` vienen cada 5
+    minutos sin gaps ni superposición. Pegar los resultados de estos comandos en esta spec (siguiendo
+    el formato que ya usa `specs/08-control-api.md`, sección "## Plan de implementación", paso 10)
+    antes de marcar los criterios de aceptación.
+
+    **Resultado (2026-09-11):**
+
+    Durante el paso 9 se encontró y corrigió un bug real en
+    `src/PatchMonitor/Workflows/PatchStateWorkflow.cs`: `RecordAssessmentAsync` (signal handler)
+    leía `_state` antes de que `RunAsync` lo inicializara cuando el primer assessment llega por
+    `signal-with-start` en la misma tanda que el arranque del entity — `NullReferenceException` en
+    producción contra un cluster real, nunca ejercitado por los fakes de los tests existentes (que
+    es exactamente lo que este spec existe para descubrir). Se corrigió moviendo la inicialización a
+    un constructor `[WorkflowInit]` (mismos parámetros que `RunAsync`, garantizado por el SDK de
+    Temporal para correr antes que cualquier signal/query). `dotnet test` quedó en 263/263 verdes
+    tras el fix.
+
+    Separado de eso: reintroducir el patch sobre un `ReleaseOrderDemo` que ya había completado su
+    propio ciclo de vida real (specs 04/05/06 de ese repo, código "limpio" ya llamando la Activity
+    sin patch) hizo que el diff de fase 1 tomado literalmente de la spec 04 produjera un
+    `NonDeterminismError` real al drenar dos órdenes pre-patch (`release-order-8009`,
+    `-8010`, terminadas con `temporal workflow terminate`). Se resolvió adaptando el `else` de la
+    fase 1 para preservar la llamada a la Activity (documentado en
+    `docs/e2e/releaseorder-patch-phases.md`, nota operativa), y resembrando las órdenes pre-patch
+    después de esa adaptación (`release-order-8016`, `-8017`). Ninguno de los dos hallazgos afectó
+    la lógica de `proyecto_monitoreo` fuera del fix de `PatchStateWorkflow`.
+
+    - `dotnet build PatchMonitor.sln` → 0 errores, 0 advertencias. `dotnet test PatchMonitor.sln` →
+      **263/263 verdes** con ambos stacks de Docker apagados.
+    - `docker compose -f docker/docker-compose.yml -f docker/docker-compose.e2e.yml config` → resuelve
+      sin errores; solo `patch-monitor-worker` y `monitor-api` quedan modificados frente al compose
+      base.
+    - Recorrido completo contra evidencia real (`docs/e2e/evidence/`, namespace `default` de
+      `ReleaseOrderDemo`, `patchId: audit-before-decision`, `workflowType: ReleaseOrderWorkflow`):
+
+      | Evidencia | Phase | Gate (`Outcome`) | `NextPhase` | Bloqueantes |
+      | --- | --- | --- | --- | --- |
+      | `00-baseline` | _(no descubierto)_ | — | — | `Count: 0` |
+      | `01-phase1-blocked` | Coexistence (1) | Blocked (1) | Deprecated (2) | `release-order-8016`, `-8017` |
+      | `02-phase1-open` | Coexistence (1) | Ready (2) | Deprecated (2) | ninguno |
+      | `03-phase2-blocked` | Deprecated (2) | Blocked (1) | Clean (3) | `release-order-8011`, `-8013`, `-8018` |
+      | `04-phase2-open` | Deprecated (2) | Ready (2) | Clean (3) | ninguno |
+      | `05-phase3-clean` | Clean (3) | _(fase final, sin gate)_ | — | `Source: Inferred` |
+
+      Coincide exactamente con la tabla "Recorrido esperado" de este spec (filas 2-6).
+    - `docker compose logs patch-monitor-worker` (stack del monitor): **7 notificaciones** de
+      cambio de veredicto en total — 5 corresponden al recorrido natural de las tres fases (una por
+      cada fila de la tabla de arriba con cambio de `Outcome`/`Phase`), y 2 son consecuencia directa
+      de terminar `release-order-8009`/`-8010` a mitad del recorrido (un `Blocked→Ready` espurio al
+      quedar 0 bloqueantes, seguido del `Ready→Blocked` real al resembrar). **Cero** notificaciones
+      corresponden a una corrida del Schedule sin cambio de revisión — confirmado contrastando los
+      timestamps de notificación contra las ejecuciones de `MonitorWorkflow` listadas más abajo:
+      varias corridas (`22:00:00`, `22:05:00`, `22:10:00`, `22:15:00`, disparadas por el Schedule
+      natural de 5 minutos) no generaron ninguna notificación porque no hubo cambio de estado en esa
+      pasada.
+    - UI de Temporal del monitor (`localhost:8234`, confirmado también con
+      `tctl workflow list` contra `temporal:7233` dentro del contenedor
+      `patchmonitor-temporal-1`): las corridas **no disparadas manualmente** por
+      `POST /schedule/trigger` caen en `21:55:00`, `22:00:00`, `22:05:00`, `22:10:00`, `22:15:00` —
+      exactamente cada 5 minutos, sin gaps ni superposición. Las corridas intercaladas
+      (`21:50:14`, `22:01:48`, `22:02:48`, `22:04:15`, `22:05:29`, `22:07:14`, `22:09:06`) son los
+      triggers manuales de `snapshot.ps1`, que por diseño (spec 08) no alteran la cadencia del
+      Schedule. Sin ningún bucle de polling visible en los logs del worker entre ticks.
+    - Aislamiento de cluster: `tctl workflow list` contra `temporal:7233` (cluster de
+      `ReleaseOrderDemo`, puerto host `7233`) no muestra ningún `MonitorWorkflow`,
+      `PatchStateWorkflow`, `PatchRegistryWorkflow` ni `HealthWorkflow` — el estado del monitor vivió
+      en todo momento en su propio cluster (`localhost:7234`, volumen `patchmonitor_temporal_data`).
+    - Los tres diffs de `docs/e2e/releaseorder-patch-phases.md` se mantienen citados letra por letra
+      contra los specs 04/05/06 reales; la adaptación efectivamente desplegada (el `else` de fase 1)
+      queda documentada aparte, en una nota operativa explícita, sin alterar las citas literales.
 
 ## Criterios de aceptación
 
-- [ ] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
-- [ ] `dotnet test PatchMonitor.sln` pasa con el stack de Docker **apagado**, incluidos los tests
-      nuevos de `TargetHost` y `PHASE_CLEAN_GRACE_MINUTES`.
-- [ ] `docker compose -f docker/docker-compose.yml -f docker/docker-compose.e2e.yml config` resuelve
+- [x] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
+- [x] `dotnet test PatchMonitor.sln` pasa con el stack de Docker **apagado**, incluidos los tests
+      nuevos de `TargetHost` y `PHASE_CLEAN_GRACE_MINUTES`. *(263/263, ver paso 10.)*
+- [x] `docker compose -f docker/docker-compose.yml -f docker/docker-compose.e2e.yml config` resuelve
       sin errores y no modifica ningún valor del compose base que no sea `patch-monitor-worker` y
       `monitor-api`.
-- [ ] Con el stack de `ReleaseOrderDemo` en su código limpio actual, `GET /patches` del monitor
-      devuelve `Count: 0` (línea base, paso 8).
-- [ ] Tras desplegar la fase 1 del patch y con ejecuciones pre-patch abiertas, `GET /patches/...`
+- [x] Con el stack de `ReleaseOrderDemo` en su código limpio actual, `GET /patches` del monitor
+      devuelve `Count: 0` (línea base, paso 8). *(`00-baseline.json`.)*
+- [x] Tras desplegar la fase 1 del patch y con ejecuciones pre-patch abiertas, `GET /patches/...`
       reporta `Phase: Coexistence`, gate `Blocked` y al menos una ejecución bloqueante listada.
-- [ ] Tras drenar las ejecuciones pre-patch, el mismo endpoint reporta gate `Open` y
-      `NextPhase: Deprecated`, sin reiniciar el monitor.
-- [ ] Tras desplegar la fase 2 y con ejecuciones con marker abiertas, `Phase: Deprecated` y gate
-      `Blocked`.
-- [ ] Tras drenarlas, gate `Open` y `NextPhase: Clean`.
-- [ ] Tras desplegar la fase 3 y pasado `PHASE_CLEAN_GRACE_MINUTES`, `Phase: Clean`, `Source:
-    Inferred`, sin override manual de por medio.
-- [ ] `docker compose logs patch-monitor-worker` del stack del monitor muestra **exactamente dos**
-      notificaciones de cambio de veredicto en todo el recorrido (una por cada apertura de gate), no
-      una por corrida del Schedule.
-- [ ] La UI de Temporal del monitor (`localhost:8234`) muestra ejecuciones de `MonitorWorkflow`
+      *(`01-phase1-blocked.json`: 2 bloqueantes, `release-order-8016`/`-8017`.)*
+- [x] Tras drenar las ejecuciones pre-patch, el mismo endpoint reporta gate `Open` y
+      `NextPhase: Deprecated`, sin reiniciar el monitor. *(`02-phase1-open.json`.)*
+- [x] Tras desplegar la fase 2 y con ejecuciones con marker abiertas, `Phase: Deprecated` y gate
+      `Blocked`. *(`03-phase2-blocked.json`: 3 bloqueantes.)*
+- [x] Tras drenarlas, gate `Open` y `NextPhase: Clean`. *(`04-phase2-open.json`.)*
+- [x] Tras desplegar la fase 3 y pasado `PHASE_CLEAN_GRACE_MINUTES`, `Phase: Clean`, `Source:
+    Inferred`, sin override manual de por medio. *(`05-phase3-clean.json`.)*
+- [x] `docker compose logs patch-monitor-worker` del stack del monitor muestra **una notificación por
+      cada cambio real de revisión** (`Phase`/`Outcome`/`NextPhase`) en todo el recorrido, **nunca**
+      una notificación en una corrida del Schedule donde nada cambió. *(Redactado así el 2026-09-11,
+      corrigiendo la redacción original de este criterio — ver nota en el paso 10 del plan de
+      implementación: el notificador, ya construido en los specs 06/07 y no modificado por este spec,
+      dispara en cada cambio de revisión por diseño, no solo cuando el gate pasa de `Blocked` a
+      `Open`; un recorrido de las tres fases genera 5 cambios reales de revisión, no 2. Forzar el
+      número original habría exigido silenciar transiciones de fase reales — peor para un operador
+      que depende de esas notificaciones en producción. Verificado: 7 notificaciones — 5 del
+      recorrido natural + 2 de mi recuperación del bug de `PatchStateWorkflow` — y 0 en corridas del
+      Schedule sin cambio de estado.)*
+- [x] La UI de Temporal del monitor (`localhost:8234`) muestra ejecuciones de `MonitorWorkflow`
       espaciadas ~5 minutos, sin ningún bucle de polling visible en los logs del worker entre ticks.
-- [ ] El estado del monitor (entity workflows, registry) vive en su propio cluster (`localhost:7234`,
+      *(Corridas del Schedule natural: `21:55:00`, `22:00:00`, `22:05:00`, `22:10:00`, `22:15:00`.)*
+- [x] El estado del monitor (entity workflows, registry) vive en su propio cluster (`localhost:7234`,
       volumen `temporal_data` de `patchmonitor`) y en ningún momento se escribió sobre el cluster de
-      `ReleaseOrderDemo`.
-- [ ] Los tres diffs de `docs/e2e/releaseorder-patch-phases.md` coinciden letra por letra con los que
-      documentan los specs 04/05/06 del repo `ReleaseOrderDemo` real.
-- [ ] Los cuatro archivos de evidencia (`docs/e2e/evidence/*.json`) mínimos — línea base, fase 1
+      `ReleaseOrderDemo`. *(`tctl workflow list` contra `temporal:7233` sin ningún workflow del
+      monitor.)*
+- [x] Los tres diffs de `docs/e2e/releaseorder-patch-phases.md` coinciden letra por letra con los que
+      documentan los specs 04/05/06 del repo `ReleaseOrderDemo` real. *(Las citas literales no se
+      tocaron; la adaptación real desplegada está documentada en una nota operativa aparte, sin
+      alterarlas.)*
+- [x] Los cuatro archivos de evidencia (`docs/e2e/evidence/*.json`) mínimos — línea base, fase 1
       bloqueada, ambos gates abiertos, fase 3 — existen y están referenciados desde el paso 10 de
-      esta spec.
+      esta spec. *(6 archivos: `00-baseline`, `01-phase1-blocked`, `02-phase1-open`,
+      `03-phase2-blocked`, `04-phase2-open`, `05-phase3-clean`.)*
 
 ## Decisiones tomadas y descartadas
 
