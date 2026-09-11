@@ -13,13 +13,20 @@ public sealed record PhaseOptions(TimeSpan CleanGrace)
     public static readonly TimeSpan DefaultCleanGrace = TimeSpan.FromHours(24);
 
     /// <summary>
-    /// Lee <c>PHASE_CLEAN_GRACE_HOURS</c> como un entero de horas. Ausente, no numérico o
-    /// no positivo ⇒ <see cref="DefaultCleanGrace"/>. Nunca lanza.
+    /// Lee <c>PHASE_CLEAN_GRACE_MINUTES</c> como un entero de minutos; si no está presente o no
+    /// es positiva, cae a <c>PHASE_CLEAN_GRACE_HOURS</c> (entero de horas). Ausente, no numérico
+    /// o no positivo en ambas ⇒ <see cref="DefaultCleanGrace"/>. Nunca lanza.
     /// </summary>
     public static PhaseOptions FromEnvironment()
     {
-        var raw = Environment.GetEnvironmentVariable("PHASE_CLEAN_GRACE_HOURS");
-        var cleanGrace = int.TryParse(raw, out var hours) && hours > 0
+        var minutesRaw = Environment.GetEnvironmentVariable("PHASE_CLEAN_GRACE_MINUTES");
+        if (int.TryParse(minutesRaw, out var minutes) && minutes > 0)
+        {
+            return new PhaseOptions(TimeSpan.FromMinutes(minutes));
+        }
+
+        var hoursRaw = Environment.GetEnvironmentVariable("PHASE_CLEAN_GRACE_HOURS");
+        var cleanGrace = int.TryParse(hoursRaw, out var hours) && hours > 0
             ? TimeSpan.FromHours(hours)
             : DefaultCleanGrace;
 
