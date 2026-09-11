@@ -35,4 +35,11 @@ public interface IPatchStateStore
 
     /// <summary>Quita el override vigente del entity del patch y devuelve el estado resultante.</summary>
     Task<PatchState> ClearOverrideAsync(PatchKey key, CancellationToken ct = default);
+
+    /// <summary>
+    /// Reclama, sobre el entity del patch, el derecho a notificar <paramref name="revision"/>.
+    /// Devuelve <c>true</c> solo la primera vez que se reclama esa revisión; un reintento con
+    /// la misma <paramref name="revision"/> devuelve <c>false</c> sin volver a notificar.
+    /// </summary>
+    Task<bool> TryClaimNotificationAsync(PatchKey key, int revision, CancellationToken ct = default);
 }

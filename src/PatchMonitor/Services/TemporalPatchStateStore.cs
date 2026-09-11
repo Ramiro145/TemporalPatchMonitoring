@@ -145,6 +145,12 @@ public sealed class TemporalPatchStateStore : IPatchStateStore
         return await handle.ExecuteUpdateAsync(wf => wf.ClearOverrideAsync()).ConfigureAwait(false);
     }
 
+    public async Task<bool> TryClaimNotificationAsync(PatchKey key, int revision, CancellationToken ct = default)
+    {
+        var handle = await EnsureEntityAsync(key).ConfigureAwait(false);
+        return await handle.ExecuteUpdateAsync(wf => wf.TryClaimNotificationAsync(revision)).ConfigureAwait(false);
+    }
+
     // "Crea-o-señala": start seguido del signal, y si el entity ya existe se señala la
     // ejecución en curso. Dos RPCs en vez de un SignalWithStartWorkflowExecution atómico
     // porque el test-server de time-skipping no responde queries hechas inmediatamente

@@ -81,4 +81,16 @@ public sealed class FakePatchStateStore : IPatchStateStore
 
     public Task<PatchState> ClearOverrideAsync(PatchKey key, CancellationToken ct = default) =>
         throw new NotSupportedException("No lo usa MonitorWorkflow.");
+
+    public Task<bool> TryClaimNotificationAsync(PatchKey key, int revision, CancellationToken ct = default)
+    {
+        var current = _states.TryGetValue(key, out var existing) ? existing : PatchState.Initial(key);
+        if (revision <= current.NotifiedRevision)
+        {
+            return Task.FromResult(false);
+        }
+
+        _states[key] = current with { NotifiedRevision = revision };
+        return Task.FromResult(true);
+    }
 }

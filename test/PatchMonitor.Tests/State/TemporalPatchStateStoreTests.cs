@@ -154,4 +154,22 @@ public class TemporalPatchStateStoreTests
             Assert.Null(afterClear.Override);
         });
     }
+
+    [Fact]
+    public async Task TryClaimNotification_dos_llamadas_seguidas_con_la_misma_revision_solo_la_primera_reclama()
+    {
+        await RunAsync(new NoopDecisionSink(), async store =>
+        {
+            await store.RecordAssessmentAsync(Assessment(KeyA, T0));
+
+            var first = await store.TryClaimNotificationAsync(KeyA, 1);
+            var second = await store.TryClaimNotificationAsync(KeyA, 1);
+
+            Assert.True(first);
+            Assert.False(second);
+
+            var state = await store.GetStateAsync(KeyA);
+            Assert.Equal(1, state!.NotifiedRevision);
+        });
+    }
 }
