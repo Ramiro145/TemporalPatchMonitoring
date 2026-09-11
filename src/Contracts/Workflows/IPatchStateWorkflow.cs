@@ -42,4 +42,14 @@ public interface IPatchStateWorkflow
     /// <summary>Quita el override vigente; el estado vuelve a la fase inferida en el siguiente assessment.</summary>
     [WorkflowUpdate]
     Task<PatchState> ClearOverrideAsync();
+
+    /// <summary>
+    /// Reclama el derecho a notificar <paramref name="revision"/>: devuelve <c>true</c> y avanza
+    /// <see cref="PatchState.NotifiedRevision"/> solo si <paramref name="revision"/> es mayor que
+    /// el vigente; si no, devuelve <c>false</c> sin tocar el estado. Va por
+    /// <c>[WorkflowUpdate]</c>, no por signal, porque el llamador necesita la respuesta
+    /// sincrónica para decidir si además dispara el envío.
+    /// </summary>
+    [WorkflowUpdate]
+    Task<bool> TryClaimNotificationAsync(int revision);
 }

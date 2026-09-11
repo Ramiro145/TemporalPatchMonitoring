@@ -22,12 +22,13 @@ public sealed record PatchState(
     PhaseOverride? Override,
     int AssessmentCount,
     int Revision,
+    int NotifiedRevision,
     IReadOnlyList<PatchStateChange> History)
 {
     /// <summary>
     /// Estado inicial de un entity recién creado: fase <see cref="PatchPhase.Unknown"/>,
-    /// sin veredictos, sin override, <see cref="Revision"/> y <see cref="AssessmentCount"/>
-    /// en 0 e <see cref="History"/> vacía.
+    /// sin veredictos, sin override, <see cref="Revision"/>, <see cref="NotifiedRevision"/> y
+    /// <see cref="AssessmentCount"/> en 0 e <see cref="History"/> vacía.
     /// </summary>
     public static PatchState Initial(PatchKey key) =>
         new(
@@ -42,13 +43,15 @@ public sealed record PatchState(
             Override: null,
             AssessmentCount: 0,
             Revision: 0,
+            NotifiedRevision: 0,
             History: Array.Empty<PatchStateChange>());
 
     /// <summary>
     /// Copia para arrancar la próxima ejecución tras un <c>Continue-As-New</c>:
     /// <see cref="AssessmentCount"/> vuelve a 0 e <see cref="History"/> se recorta a las
     /// últimas <paramref name="historyLimit"/> entradas. Todo lo demás —fase, fuente,
-    /// veredictos, override y <see cref="Revision"/>— sobrevive intacto.
+    /// veredictos, override, <see cref="Revision"/> y <see cref="NotifiedRevision"/>— sobrevive
+    /// intacto: una notificación ya reclamada no puede repetirse tras el salto.
     /// </summary>
     public PatchState ForCarryover(int historyLimit)
     {

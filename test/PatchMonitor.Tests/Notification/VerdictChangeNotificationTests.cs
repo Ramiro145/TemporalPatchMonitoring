@@ -40,6 +40,7 @@ public class VerdictChangeNotificationTests
             Override: null,
             AssessmentCount: 2,
             Revision: 2,
+            NotifiedRevision: 0,
             History: new[]
             {
                 Change(T0, PatchPhase.Unknown, PatchPhase.Coexistence, null, GateOutcome.Blocked, "Alta"),

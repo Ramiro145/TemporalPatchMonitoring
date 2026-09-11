@@ -146,6 +146,22 @@ public class PatchStateWorkflow : IPatchStateWorkflow
         return Task.FromResult(_state);
     }
 
+    /// <summary>
+    /// Comparación y asignación simple sobre <see cref="_state"/>: sin validator, a diferencia
+    /// de <see cref="SetOverrideAsync"/>, porque no hay entrada de usuario que rechazar.
+    /// </summary>
+    [WorkflowUpdate]
+    public Task<bool> TryClaimNotificationAsync(int revision)
+    {
+        if (revision <= _state.NotifiedRevision)
+        {
+            return Task.FromResult(false);
+        }
+
+        _state = _state with { NotifiedRevision = revision };
+        return Task.FromResult(true);
+    }
+
     private IReadOnlyList<PatchStateChange> AppendTrimmed(
         IReadOnlyList<PatchStateChange> history, PatchStateChange change)
     {
