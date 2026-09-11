@@ -320,18 +320,3 @@ Cero cambios de código en el monitor para apuntarlo ahí. El procedimiento est�
 - El auto-versionado del propio monitor (spec 10) está diferido.
 
 Detalle en `specs/09-multi-target-e2e-validation.md`, sección "Límites conocidos".
-
----
-
-## Enunciado original
-
-El pedido que dio origen al proyecto, conservado tal cual:
-
-> Esto es para un proyecto genérico, workflow, un proyecto que esté pendiente de un patch en qué
-> estado está y cuándo está listo para pasar al próximo estado, un monitoreo de un workflow.
-> Respetar patrones de diseño, inversión de dependencias, SOLID, en C# .NET; si existe ya algo de
-> Temporal para ayudarnos, implementarlo. Saltar de los pasos 1 al 2 y del 2 al 3 en orden
-> correctamente. No estar pulleando constantemente: scheduler de Temporal, cada 5 minutos de
-> preferencia. Basarse en `ReleaseOrderDemo` (versiones de Temporal y .NET, Docker para BD y
-> backend). Usar Spec-Driven Design (`/spec`, `/spec-impl`) siguiendo
-> <https://github.com/Klerith/fernando-skills>.
