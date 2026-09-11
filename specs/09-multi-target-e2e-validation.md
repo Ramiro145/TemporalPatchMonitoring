@@ -463,6 +463,29 @@ etapa (`ns` = `default`, `type` = `ReleaseOrderWorkflow`):
 | El stack de `ReleaseOrderDemo` incluye SQL Server 2022, pesado en RAM; puede no arrancar junto al stack del monitor en una máquina ajustada.                                                                                        | Se verifica en el paso 8 antes de tocar código; si falla, es una restricción de la máquina de desarrollo, no del diseño del monitor, y se documenta como bloqueo del paso 10 hasta correr en una máquina con más recursos.                           |
 | Los timers de `ReleaseOrderWorkflow` (`Workflow.DelayAsync(5s)` y `(10s)`) hacen que drenar una orden tarde ~15-20s de reloj real; con varias órdenes en paralelo el drenaje puede no estar completo cuando se dispara el snapshot. | `drain-orders.ps1` espera confirmación de `GetStatus == Completed` (o `Failed`/compensado) antes de devolver el control, y el paso 9 dispara el snapshot recién después de que el script termina.                                                    |
 
+## Límites conocidos para reusar esto en otro proyecto
+
+Discutido con el usuario el 2026-09-11, a partir de la pregunta de si el monitor tal como quedó
+puede apuntarse a cualquier otro proyecto que use patches de Temporal. Lo que este spec **sí**
+probó con evidencia real: apuntar a un target completamente ajeno (`ReleaseOrderDemo`) no requirió
+tocar una sola línea del monitor — solo variables de entorno — y la lógica de descubrimiento y
+resolución de fase nunca asumió nada específico de `ReleaseOrderWorkflow`. Lo que queda como
+"hardening progresivo", no como rediseño, antes de confiar en esto para cualquier proyecto sin
+mirar dos veces:
+
+| # | Límite | Por qué no es bloqueante hoy | Qué haría falta para cerrarlo |
+| - | ------ | ----------------------------- | ------------------------------ |
+| 1 | El ruido de descubrimiento escala con el **tamaño total del namespace** (todos sus workflow types), no con la cantidad de patches — porque el spec 03 decidió no filtrar por `WorkflowType` a propósito. | Es pura configuración: se vivió en este mismo spec (`DISCOVERY_LOOKBACK_DAYS=1` para acotar el ruido de `ReleaseOrderDemo`). | Al apuntar a un proyecto nuevo, dimensionar `DISCOVERY_LOOKBACK_DAYS`/`DISCOVERY_MAX_EXECUTIONS`/`DISCOVERY_MAX_HISTORIES` contra su volumen real de ejecuciones **antes** de confiar en el resultado — no hay un default universal. |
+| 2 | **Varios patches simultáneos contra un cluster real** nunca se ejerció end-to-end en este spec (sí con fakes en `MonitorWorkflowTests`, spec 06). | El código es N-patches por diseño (`PatchKey` = namespace+workflowType+patchId); el riesgo es de cobertura, no de arquitectura. | Repetir un recorrido como este con 2+ patches activos al mismo tiempo en un target real, antes de asumirlo confiable para proyectos que versionan varios workflows a la vez. |
+| 3 | El **notificador webhook** (spec 07) no se ejerció en este spec — solo corrió el log estructurado; `NOTIFIER_WEBHOOK_URL` quedó vacía en el overlay de e2e. | Tiene su propia cobertura de tests unitarios (spec 07); es un gap de validación end-to-end, no de código sin probar. | Repetir el paso 10 (o una versión corta) con `NOTIFIER_WEBHOOK_URL` apuntando a un endpoint real (p. ej. webhook.site) para confirmar la entrega fuera de los tests. |
+| 4 | **Carga sostenida real** (días, `Continue-As-New` de los entity workflows bajo acumulación real de assessments) no se probó — este spec corrió ~20 minutos. | Cubierto por tests con time-skipping (`PatchStateWorkflowTests`), que simulan el `Continue-As-New` sin esperar el reloj real. | Un soak test de días contra un proyecto real es lo único de esta lista que no se puede acelerar; se valida con tiempo, no con otro spec puntual. |
+| 5 | La convención del marker (`core_patch`, `TemporalChangeVersion`) es la que emite el SDK moderno basado en sdk-core (como `Temporalio` .NET). Un proyecto en un SDK con una implementación de versionado distinta (p. ej. Go legacy `GetVersion`) podría no ser compatible tal cual. | Ningún SDK usado hasta ahora (solo .NET) contradijo esto. | Antes de apuntar a un proyecto en otro lenguaje/SDK, confirmar que su versión de Temporal SDK use la misma convención de marker que `TemporalExecutionSource.ReadPatchMarkersAsync` espera. |
+
+Ninguno de estos cinco puntos bloquea usar el monitor contra un segundo proyecto real hoy; son la
+lista de qué mirar primero si ese segundo proyecto tiene varios patches concurrentes, notifica por
+webhook, corre bajo carga sostenida, o usa un SDK de Temporal distinto al `.NET` que este spec
+validó.
+
 ## Qué NO entra en este spec
 
 - Monitorear varios namespaces o clusters en una misma corrida.
