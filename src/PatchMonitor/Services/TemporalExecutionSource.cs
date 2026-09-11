@@ -35,19 +35,20 @@ public sealed class TemporalExecutionSource : IExecutionSource
 
     private readonly Lazy<Task<ITemporalClient>> _client;
     private readonly string _namespace;
+    private readonly string _targetHost;
 
     public TemporalExecutionSource(DiscoveryOptions options)
     {
         _namespace = options.Namespace;
+        _targetHost = options.TargetHost;
         _client = new Lazy<Task<ITemporalClient>>(ConnectAsync);
     }
 
     private async Task<ITemporalClient> ConnectAsync()
     {
-        var target = Environment.GetEnvironmentVariable("TARGET_TEMPORAL_HOST") ?? "temporal:7233";
         return await TemporalClient.ConnectAsync(new TemporalClientConnectOptions
         {
-            TargetHost = target,
+            TargetHost = _targetHost,
             Namespace = _namespace,
         }).ConfigureAwait(false);
     }
