@@ -1,5 +1,7 @@
 using Contracts.Discovery;
 using Contracts.Domain;
+using Contracts.Domain.Gates;
+using Contracts.Monitor;
 using Contracts.Phase;
 using Temporalio.Activities;
 using Temporalio.Exceptions;
@@ -7,9 +9,9 @@ using Temporalio.Exceptions;
 namespace PatchMonitor.Activities;
 
 /// <summary>
-/// Envoltura <c>[Activity]</c> del resolver de fase y del store de overrides, para que los
-/// specs 06 y 08 los invoquen desde workflows. Es cómputo puro en memoria: no hay RPC contra el
-/// cluster ni fallo transitorio que esperar.
+/// Envoltura <c>[Activity]</c> del resolver de fase, el evaluador de gate y el store de
+/// overrides, para que los specs 06 y 08 los invoquen desde workflows. Es cómputo puro en
+/// memoria: no hay RPC contra el cluster ni fallo transitorio que esperar.
 /// </summary>
 public class PhaseActivities
 {
@@ -21,16 +23,35 @@ public class PhaseActivities
     };
 
     private readonly IPhaseResolver _resolver;
+    private readonly PhaseEvaluator _evaluator;
     private readonly IPhaseOverrideStore _overrides;
 
-    public PhaseActivities(IPhaseResolver resolver, IPhaseOverrideStore overrides)
+    public PhaseActivities(IPhaseResolver resolver, PhaseEvaluator evaluator, IPhaseOverrideStore overrides)
     {
         _resolver = resolver;
+        _evaluator = evaluator;
         _overrides = overrides;
     }
 
     [Activity]
     public PhaseResolution ResolvePhase(PatchDiscoveryResult result) => _resolver.Resolve(result);
+
+    /// <summary>
+    /// Resuelve la fase de <paramref name="result"/> y, solo si es <see cref="PatchPhase.Coexistence"/>
+    /// o <see cref="PatchPhase.Deprecated"/>, evalúa el gate de salto. Para <see cref="PatchPhase.Clean"/>
+    /// y <see cref="PatchPhase.Unknown"/> devuelve <c>Verdict = null</c>: no hay gate que aplique.
+    /// </summary>
+    [Activity]
+    public PatchAssessment AssessPatch(PatchDiscoveryResult result)
+    {
+        var resolution = _resolver.Resolve(result);
+
+        PhaseVerdict? verdict = resolution.Phase is PatchPhase.Coexistence or PatchPhase.Deprecated
+            ? _evaluator.Evaluate(result.Key, resolution.Phase, result.Executions)
+            : null;
+
+        return new PatchAssessment(resolution, verdict);
+    }
 
     [Activity]
     public void SetPhaseOverride(PhaseOverride ov)
