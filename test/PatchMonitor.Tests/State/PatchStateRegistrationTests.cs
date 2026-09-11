@@ -1,8 +1,8 @@
+using Common.State;
 using Contracts.State;
 using Microsoft.Extensions.DependencyInjection;
 using PatchMonitor.Activities;
 using PatchMonitor.Infrastructure;
-using PatchMonitor.Services;
 using Xunit;
 
 namespace PatchMonitor.Tests.State;

@@ -1,7 +1,7 @@
+using Common.State;
 using Contracts.Domain;
 using Contracts.Phase;
 using Contracts.State;
-using PatchMonitor.Services;
 using PatchMonitor.Workflows;
 using Temporalio.Client;
 using Temporalio.Testing;

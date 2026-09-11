@@ -7,7 +7,7 @@ using Contracts.Workflows;
 using Temporalio.Client;
 using Temporalio.Exceptions;
 
-namespace PatchMonitor.Services;
+namespace Common.State;
 
 /// <summary>
 /// Implementación de <see cref="IPatchStateStore"/> sobre el <see cref="ITemporalClient"/> del

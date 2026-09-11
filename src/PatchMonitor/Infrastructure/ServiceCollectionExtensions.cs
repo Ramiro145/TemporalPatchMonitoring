@@ -1,3 +1,4 @@
+using Common.State;
 using Contracts.Discovery;
 using Contracts.Domain.Gates;
 using Contracts.Monitor;

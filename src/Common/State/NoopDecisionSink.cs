@@ -1,7 +1,7 @@
 using Contracts.Domain;
 using Contracts.State;
 
-namespace PatchMonitor.Services;
+namespace Common.State;
 
 /// <summary>
 /// Implementación no-op de <see cref="IDecisionSink"/>, registrada por default. Un adaptador
