@@ -25,7 +25,7 @@ namespace PatchMonitor.Tests.Monitor;
 public class MonitorWorkflowTests
 {
     private static readonly DiscoveryOptions Discovery =
-        new("default", LookbackDays: 7, MaxExecutions: 500, MaxHistories: 200);
+        new("default", TargetHost: "temporal:7233", LookbackDays: 7, MaxExecutions: 500, MaxHistories: 200);
 
     private static async Task<MonitorRunSummary> RunAsync(
         IExecutionSource source, FakePatchStateStore store, IEnumerable<INotifier>? notifiers = null)

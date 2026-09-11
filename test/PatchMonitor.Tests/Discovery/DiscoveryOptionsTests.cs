@@ -13,6 +13,7 @@ public class DiscoveryOptionsTests
     private static readonly string[] Vars =
     {
         "TARGET_TEMPORAL_NAMESPACE",
+        "TARGET_TEMPORAL_HOST",
         "DISCOVERY_LOOKBACK_DAYS",
         "DISCOVERY_MAX_EXECUTIONS",
         "DISCOVERY_MAX_HISTORIES",
@@ -46,6 +47,7 @@ public class DiscoveryOptionsTests
         var options = WithEnv(new Dictionary<string, string?>());
 
         Assert.Equal(DiscoveryOptions.DefaultNamespace, options.Namespace);
+        Assert.Equal(DiscoveryOptions.DefaultTargetHost, options.TargetHost);
         Assert.Equal(DiscoveryOptions.DefaultLookbackDays, options.LookbackDays);
         Assert.Equal(DiscoveryOptions.DefaultMaxExecutions, options.MaxExecutions);
         Assert.Equal(DiscoveryOptions.DefaultMaxHistories, options.MaxHistories);
@@ -57,12 +59,14 @@ public class DiscoveryOptionsTests
         var options = WithEnv(new Dictionary<string, string?>
         {
             ["TARGET_TEMPORAL_NAMESPACE"] = "releaseorder",
+            ["TARGET_TEMPORAL_HOST"] = "host.docker.internal:7233",
             ["DISCOVERY_LOOKBACK_DAYS"] = "30",
             ["DISCOVERY_MAX_EXECUTIONS"] = "1000",
             ["DISCOVERY_MAX_HISTORIES"] = "50",
         });
 
         Assert.Equal("releaseorder", options.Namespace);
+        Assert.Equal("host.docker.internal:7233", options.TargetHost);
         Assert.Equal(30, options.LookbackDays);
         Assert.Equal(1000, options.MaxExecutions);
         Assert.Equal(50, options.MaxHistories);
@@ -99,5 +103,26 @@ public class DiscoveryOptionsTests
         });
 
         Assert.Equal(DiscoveryOptions.DefaultNamespace, options.Namespace);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void TargetHost_vacio_o_en_blanco_cae_al_default(string blanco)
+    {
+        var options = WithEnv(new Dictionary<string, string?>
+        {
+            ["TARGET_TEMPORAL_HOST"] = blanco,
+        });
+
+        Assert.Equal(DiscoveryOptions.DefaultTargetHost, options.TargetHost);
+    }
+
+    [Fact]
+    public void TargetHost_ausente_cae_al_default()
+    {
+        var options = WithEnv(new Dictionary<string, string?>());
+
+        Assert.Equal(DiscoveryOptions.DefaultTargetHost, options.TargetHost);
     }
 }

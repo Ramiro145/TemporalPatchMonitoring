@@ -8,7 +8,7 @@ namespace PatchMonitor.Tests.Discovery;
 public class PatchDiscoveryServiceTests
 {
     private static readonly DiscoveryOptions Options =
-        new("default", LookbackDays: 7, MaxExecutions: 500, MaxHistories: 200);
+        new("default", TargetHost: "temporal:7233", LookbackDays: 7, MaxExecutions: 500, MaxHistories: 200);
 
     private static PatchDiscoveryService Build(FakeExecutionSource source) => new(source, Options);
 
