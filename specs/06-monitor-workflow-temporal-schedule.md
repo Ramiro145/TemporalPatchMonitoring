@@ -1,6 +1,6 @@
 # 06 - MonitorWorkflow y Temporal Schedule
 
-**Estado:** Aprobado
+**Estado:** Implementado
 **Depende de:** [05-durable-state-entity-workflows.md](05-durable-state-entity-workflows.md)
 **Fecha:** 2026-09-10
 
@@ -285,33 +285,75 @@ Env vars que lee `MonitorOptions.FromEnvironment()`:
      no muestra actividad; solo aparece la línea de la pasada cuando el Schedule dispara.
    - Registrar la salida de estos comandos en este spec antes de marcar los criterios.
 
+   **Salida registrada (2026-09-11, stack local vía `docker compose`):**
+
+   ```
+   $ dotnet build PatchMonitor.sln
+   Compilación correcta.
+       0 Advertencia(s)
+       0 Errores
+
+   $ dotnet test PatchMonitor.sln
+   Correctas! - Con error: 0, Superado: 174, Omitido: 0, Total: 174
+
+   $ temporal schedule describe --address localhost:7234 --schedule-id patch-monitor-schedule
+     Action            {"Workflow":"MonitorWorkflow","TaskQueue":"patch-monitor-task-queue",...}
+     Spec              [{"every":"5m 0s"}]
+     OverlapPolicy     Skip
+     CatchupWindow     10m 0s
+     Paused            false
+
+   $ temporal schedule trigger ... (x2) && esperar un tick automático
+   $ temporal workflow list --query "WorkflowType='MonitorWorkflow'"
+     Completed  patch-monitor-run-2026-09-11T16:30:00Z  MonitorWorkflow  (tick automático)
+     Completed  patch-monitor-run-2026-09-11T16:28:46Z  MonitorWorkflow  (trigger manual)
+     Completed  patch-monitor-run-2026-09-11T16:28:41Z  MonitorWorkflow  (trigger manual)
+   # Resultado de una corrida:
+   {"Errors":null,"FinishedAt":"...","OverridesLoaded":1,"PatchesAssessed":1,
+    "PatchesDiscovered":1,"StartedAt":"...","VerdictsChanged":0}
+
+   $ temporal workflow list --query "WorkflowType='PatchStateWorkflow'"
+   # Una sola ejecución Running por cada PatchKey, antes y después de los ticks.
+
+   $ docker compose stop patch-monitor-worker && docker compose up -d patch-monitor-worker
+   patch-monitor-worker-1 | Schedule 'patch-monitor-schedule' ya existía.
+   patch-monitor-worker-1 | Worker listening on 'patch-monitor-task-queue'...
+   $ temporal schedule list --address localhost:7234
+     patch-monitor-schedule   {"Workflow":"MonitorWorkflow"}   false   ...
+   # Un solo Schedule tras el reinicio.
+
+   # Chequeo "sin polling": logs del worker entre el arranque (16:29:15) y el tick automático
+   # (16:30:00, ~45s después) no muestran ninguna línea nueva; recién aparece actividad cuando
+   # el server de Temporal encola la tarea.
+   ```
+
 ## Criterios de aceptación
 
-- [ ] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
-- [ ] `dotnet test PatchMonitor.sln` pasa con el stack de Docker **apagado**; `MonitorWorkflowTests`
+- [x] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
+- [x] `dotnet test PatchMonitor.sln` pasa con el stack de Docker **apagado**; `MonitorWorkflowTests`
       corre sobre `WorkflowEnvironment.StartTimeSkippingAsync`.
-- [ ] `MonitorWorkflow` no contiene ningún `while`, `for` infinito, `Workflow.DelayAsync` ni
+- [x] `MonitorWorkflow` no contiene ningún `while`, `for` infinito, `Workflow.DelayAsync` ni
       `Continue-As-New`: `RunAsync` hace una pasada y devuelve.
-- [ ] El Schedule se crea una sola vez: un segundo arranque del worker no lanza y no deja dos
+- [x] El Schedule se crea una sola vez: un segundo arranque del worker no lanza y no deja dos
       Schedules (`EnsureScheduleAsync` devuelve `false` y loguea "ya existía").
-- [ ] El Schedule tiene `Overlap == ScheduleOverlapPolicy.Skip` y un `ScheduleIntervalSpec` igual a
+- [x] El Schedule tiene `Overlap == ScheduleOverlapPolicy.Skip` y un `ScheduleIntervalSpec` igual a
       `MonitorOptions.Interval` (5 min con los defaults).
-- [ ] Un patch cuyo `AssessPatch` o `RecordAssessmentAsync` lanza `ApplicationFailureException` no
+- [x] Un patch cuyo `AssessPatch` o `RecordAssessmentAsync` lanza `ApplicationFailureException` no
       aborta la pasada: los demás patches se procesan y el mensaje queda en `MonitorRunSummary.Errors`.
-- [ ] Un fallo del descubrimiento entero (`DiscoveryConfigurationError` no reintentable) sí hace
+- [x] Un fallo del descubrimiento entero (`DiscoveryConfigurationError` no reintentable) sí hace
       fallar la corrida de `MonitorWorkflow`.
-- [ ] Con `MONITOR_MAX_PATCHES_PER_RUN = N` y más de N patches descubiertos, `PatchesAssessed == N` y
+- [x] Con `MONITOR_MAX_PATCHES_PER_RUN = N` y más de N patches descubiertos, `PatchesAssessed == N` y
       `PatchesDiscovered` refleja el total real.
-- [ ] `AssessPatch` devuelve `Verdict == null` para fase `Clean` y `Unknown`, y un `PhaseVerdict` no
+- [x] `AssessPatch` devuelve `Verdict == null` para fase `Clean` y `Unknown`, y un `PhaseVerdict` no
       nulo para `Coexistence` y `Deprecated`.
-- [ ] `MonitorRunSummary.VerdictsChanged` cuenta solo los patches cuyo `Revision` avanzó en esta
+- [x] `MonitorRunSummary.VerdictsChanged` cuenta solo los patches cuyo `Revision` avanzó en esta
       pasada; dos pasadas seguidas sin cambios reales lo dejan en 0 en la segunda.
-- [ ] `MonitorOptions.FromEnvironment()` devuelve los cinco defaults con las env vars ausentes,
+- [x] `MonitorOptions.FromEnvironment()` devuelve los cinco defaults con las env vars ausentes,
       respeta valores válidos y cae al default ante basura o valores ≤ 0.
-- [ ] Un `ServiceProvider` de `AddPatchMonitorServices()` resuelve `MonitorOptions`.
-- [ ] Los contratos de los specs 03, 04 y 05 no cambian salvo el agregado de `PhaseEvaluator` al
+- [x] Un `ServiceProvider` de `AddPatchMonitorServices()` resuelve `MonitorOptions`.
+- [x] Los contratos de los specs 03, 04 y 05 no cambian salvo el agregado de `PhaseEvaluator` al
       constructor de `PhaseActivities` y la Activity `AssessPatch`.
-- [ ] El `patch-monitor-worker` declara las cuatro env vars nuevas y el worker arranca con
+- [x] El `patch-monitor-worker` declara las cuatro env vars nuevas y el worker arranca con
       `MonitorWorkflow` registrado y el Schedule creado.
 
 ## Decisiones tomadas y descartadas
