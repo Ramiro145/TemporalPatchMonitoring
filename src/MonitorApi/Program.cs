@@ -1,6 +1,8 @@
 using Common;
 using Contracts;
 using Contracts.Workflows;
+using MonitorApi.Endpoints;
+using MonitorApi.Infrastructure;
 using Temporalio.Client;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -19,6 +21,8 @@ builder.Services.AddSingleton(_ => TemporalClient.ConnectAsync(new TemporalClien
 {
     TargetHost = temporalHost
 }).GetAwaiter().GetResult());
+
+builder.Services.AddMonitorApiServices();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -61,5 +65,24 @@ app.MapPost("/health/workflow", async () =>
 
     return Results.Ok(new { workflowId });
 });
+
+// Superficie de control de patches y del Schedule (spec 08).
+app.MapGet("/patches", PatchEndpoints.ListAsync)
+    .WithName("ListPatches").WithTags("Patches");
+app.MapGet("/patches/{ns}/{type}/{patchId}", PatchEndpoints.GetAsync)
+    .WithName("GetPatch").WithTags("Patches");
+app.MapPost("/patches/{ns}/{type}/{patchId}/override", PatchEndpoints.SetOverrideAsync)
+    .WithName("SetPatchOverride").WithTags("Patches");
+app.MapDelete("/patches/{ns}/{type}/{patchId}/override", PatchEndpoints.ClearOverrideAsync)
+    .WithName("ClearPatchOverride").WithTags("Patches");
+
+app.MapGet("/schedule", ScheduleEndpoints.DescribeAsync)
+    .WithName("DescribeSchedule").WithTags("Schedule");
+app.MapPost("/schedule/pause", ScheduleEndpoints.PauseAsync)
+    .WithName("PauseSchedule").WithTags("Schedule");
+app.MapPost("/schedule/unpause", ScheduleEndpoints.UnpauseAsync)
+    .WithName("UnpauseSchedule").WithTags("Schedule");
+app.MapPost("/schedule/trigger", ScheduleEndpoints.TriggerAsync)
+    .WithName("TriggerSchedule").WithTags("Schedule");
 
 app.Run();

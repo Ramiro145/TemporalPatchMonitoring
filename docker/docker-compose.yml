@@ -107,6 +107,17 @@ services:
       - MONITOR_TASK_QUEUE=patch-monitor-task-queue
       - TARGET_TEMPORAL_HOST=temporal:7233
       - TARGET_TEMPORAL_NAMESPACE=default
+      # El store de la API arranca entities (spec 05): mismo umbral de Continue-As-New y
+      # tope de historial que patch-monitor-worker, para no divergir en cómo se lee el estado.
+      - PATCH_STATE_CAN_THRESHOLD=500
+      - PATCH_STATE_HISTORY_LIMIT=20
+      # Id del Schedule que la API opera (spec 08): tiene que coincidir con el que crea
+      # patch-monitor-worker (spec 06).
+      - MONITOR_SCHEDULE_ID=patch-monitor-schedule
+      # API de control (spec 08): tope de patches enriquecidos por GET /patches y vencimiento
+      # por defecto de un override sin ExpiresAt explícito.
+      - API_MAX_LIST_PATCHES=100
+      - API_OVERRIDE_DEFAULT_TTL_HOURS=24
     depends_on:
       temporal:
         condition: service_healthy
