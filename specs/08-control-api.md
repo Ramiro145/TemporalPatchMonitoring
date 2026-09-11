@@ -1,6 +1,6 @@
 # 08 - API de control
 
-**Estado:** Aprobado
+**Estado:** Implementado
 **Depende de:** [07-pluggable-notifier.md](07-pluggable-notifier.md)
 **Fecha:** 2026-09-11
 
@@ -390,38 +390,76 @@ patch-monitor-worker`.
     - `DELETE /patches/{...}/override` → `200`, y el tick siguiente vuelve a `source: "Inferred"`.
     - Registrar la salida de estos comandos en este spec antes de marcar los criterios.
 
+    **Resultado (2026-09-11):** el volumen `temporal_data` traía patches de pasadas manuales
+    anteriores (`core-patch`, `probe_patch`, `probe_patch_233838`, `probe_patch_233951`), lo que
+    permitió un ciclo end-to-end real sin necesidad de sembrar nada:
+
+    - `dotnet build` → 0 errores, 0 advertencias. `dotnet test` → **253/253 verdes** con el stack
+      de Docker apagado (una corrida intermedia tuvo una falla puntual y ya conocida de
+      `TemporalPatchStateStoreTests`/`PatchStateWorkflowTests` por timeout del test-server de
+      time-skipping bajo carga; la repetición inmediata la confirmó como flaky, ajena a este spec).
+    - `docker compose build monitor-api patch-monitor-worker && docker compose up -d` → los cinco
+      servicios arriba y sanos. `GET /swagger/v1/swagger.json` expone exactamente **10 rutas**
+      (4 `GET`, 5 `POST`, 1 `DELETE`).
+    - `GET /patches` → `200` con los 4 patches reales del registry, sin `History` en los resúmenes.
+    - `GET /patches/default/OrderWorkflow/core-patch` → `200` con el detalle completo (`History`,
+      veredictos, `PhaseReason`); `GET` de un patch inventado → `404`.
+    - `POST .../core-patch/override` `{Coexistence→Deprecated}` → `200`, con `ExpiresAt` en
+      `DeclaredAt + 24h` (el default de `API_OVERRIDE_DEFAULT_TTL_HOURS`).
+    - `POST .../probe_patch/override` `{Coexistence→Clean}` (salto ilegal) → `409` sin tocar el
+      store; repetido con `?force=true` → `200`.
+    - Redeclarar la fase vigente (`Clean→Clean` sobre `probe_patch`) → `200`, no `409`.
+    - `DELETE .../probe_patch/override` → `200` con `override: null`; repetido → `200` idempotente;
+      `DELETE` sobre un patch inexistente → `404`.
+    - `POST .../core-patch/override` con `Phase: Unknown`, con `DeclaredBy` vacío y con `ExpiresAt`
+      en el pasado → `400` en los tres casos, sin escribir nada.
+    - `GET /schedule` → `200` con `paused/interval/lastRunAt/nextRunAt/numActions` reales.
+      `POST /schedule/pause?note=mantenimiento-e2e` → `200` con `paused: true` y la nota
+      registrada. `POST /schedule/trigger` **con el Schedule pausado** → `202` y `numActions` subió
+      de 14 a 15 con una corrida real de `MonitorWorkflow` (confirmada en
+      `docker compose logs patch-monitor-worker`, incluida la notificación del spec 07 con
+      `"Reason":"Override de e2e-test..."` para `core-patch`, `source: Override` reflejado en el
+      siguiente `GET`). `POST /schedule/unpause` → `200` con `paused: false`.
+    - `DELETE .../core-patch/override` + `POST /schedule/trigger` → el tick siguiente devolvió
+      `core-patch` con `source: 0` (Inferred) de nuevo, confirmando el ida y vuelta completo.
+    - `POST /health/workflow` (spec 01) → `200` sin cambios de comportamiento.
+    - Stack bajado con `docker compose down` al terminar; `dotnet test` repetido en verde
+      (253/253) con Docker apagado.
+
 ## Criterios de aceptación
 
-- [ ] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
-- [ ] `dotnet test PatchMonitor.sln` pasa con el stack de Docker **apagado**.
-- [ ] `MonitorApi.csproj` sigue referenciando solo `Common` y `Contracts` (no `PatchMonitor`).
-- [ ] Mover el store y el sink a `Common` no cambia ninguna aserción de los tests preexistentes.
-- [ ] `GET /patches` devuelve un `PatchListResponse` sin `History` en los resúmenes, acotado por
+- [x] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
+- [x] `dotnet test PatchMonitor.sln` pasa con el stack de Docker **apagado**.
+- [x] `MonitorApi.csproj` sigue referenciando solo `Common` y `Contracts` (no `PatchMonitor`).
+- [x] Mover el store y el sink a `Common` no cambia ninguna aserción de los tests preexistentes.
+- [x] `GET /patches` devuelve un `PatchListResponse` sin `History` en los resúmenes, acotado por
       `API_MAX_LIST_PATCHES`, con `Truncated == true` cuando el registry lo supera.
-- [ ] Una key del registry cuyo entity no se pueda leer aparece en el listado con `Phase = Unknown`
+- [x] Una key del registry cuyo entity no se pueda leer aparece en el listado con `Phase = Unknown`
       y no hace fallar el request.
-- [ ] `GET /patches/{ns}/{type}/{patchId}` devuelve `404` para un patch desconocido y el estado
+- [x] `GET /patches/{ns}/{type}/{patchId}` devuelve `404` para un patch desconocido y el estado
       completo —incluida `History` y el override— para uno conocido.
-- [ ] Un `POST` de override con fase `Unknown`, `DeclaredBy` vacío o `ExpiresAt` ya pasado devuelve
+- [x] Un `POST` de override con fase `Unknown`, `DeclaredBy` vacío o `ExpiresAt` ya pasado devuelve
       `400` sin escribir nada.
-- [ ] Un `POST` de override con una transición ilegal según `PhaseTransition.IsLegal` devuelve `409`
+- [x] Un `POST` de override con una transición ilegal según `PhaseTransition.IsLegal` devuelve `409`
       sin escribir nada, y `200` si se repite con `?force=true`.
-- [ ] Redeclarar la fase que el patch ya tiene devuelve `200`, no `409`.
-- [ ] Un `POST` de override sin `ExpiresAt` persiste un `PhaseOverride` con vencimiento
+- [x] Redeclarar la fase que el patch ya tiene devuelve `200`, no `409`.
+- [x] Un `POST` de override sin `ExpiresAt` persiste un `PhaseOverride` con vencimiento
       `DeclaredAt + API_OVERRIDE_DEFAULT_TTL_HOURS`.
-- [ ] `DELETE` del override es idempotente (`200` incluso si no había override) y `404` si el patch
+- [x] `DELETE` del override es idempotente (`200` incluso si no había override) y `404` si el patch
       no existe.
-- [ ] `GET /schedule` refleja `paused` y el próximo tick; `POST /schedule/pause` detiene los ticks y
+- [x] `GET /schedule` refleja `paused` y el próximo tick; `POST /schedule/pause` detiene los ticks y
       `unpause` los devuelve.
-- [ ] `POST /schedule/trigger` devuelve `202` y produce una corrida de `MonitorWorkflow` incluso con
+- [x] `POST /schedule/trigger` devuelve `202` y produce una corrida de `MonitorWorkflow` incluso con
       el Schedule pausado.
-- [ ] Los cuatro endpoints de `/schedule` devuelven `503` cuando el Schedule no existe.
-- [ ] `/health` y `/health/workflow` del spec 01 siguen respondiendo igual.
-- [ ] Un `ServiceProvider` de `AddMonitorApiServices()` resuelve `IPatchStateStore`,
+- [x] Los cuatro endpoints de `/schedule` devuelven `503` cuando el Schedule no existe (verificado
+      con `FakeScheduleController` en `ScheduleEndpointsTests`; no hay forma de tumbar el Schedule
+      real sin romper el resto del stack en la corrida manual).
+- [x] `/health` y `/health/workflow` del spec 01 siguen respondiendo igual.
+- [x] Un `ServiceProvider` de `AddMonitorApiServices()` resuelve `IPatchStateStore`,
       `IScheduleController` y `ApiOptions`.
-- [ ] Los contratos de los specs 02 a 07 no cambian: este spec solo agrega tipos nuevos y mueve dos
+- [x] Los contratos de los specs 02 a 07 no cambian: este spec solo agrega tipos nuevos y mueve dos
       archivos de proyecto.
-- [ ] El servicio `monitor-api` declara las cinco env vars nuevas y la imagen construye.
+- [x] El servicio `monitor-api` declara las cinco env vars nuevas y la imagen construye.
 
 ## Decisiones tomadas y descartadas
 
