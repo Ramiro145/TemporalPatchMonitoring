@@ -8,6 +8,7 @@ using PatchMonitor.Services;
 using PatchMonitor.Tests.Discovery;
 using PatchMonitor.Workflows;
 using Temporalio.Client;
+using Temporalio.Exceptions;
 using Temporalio.Testing;
 using Temporalio.Worker;
 using Xunit;
@@ -24,7 +25,7 @@ public class MonitorWorkflowTests
     private static readonly DiscoveryOptions Discovery =
         new("default", LookbackDays: 7, MaxExecutions: 500, MaxHistories: 200);
 
-    private static async Task<MonitorRunSummary> RunAsync(FakeExecutionSource source, FakePatchStateStore store)
+    private static async Task<MonitorRunSummary> RunAsync(IExecutionSource source, FakePatchStateStore store)
     {
         await using var env = await WorkflowEnvironment.StartTimeSkippingAsync();
         var taskQueue = $"monitor-{Guid.NewGuid():N}";
@@ -89,5 +90,56 @@ public class MonitorWorkflowTests
         var second = await RunAsync(source, store);
 
         Assert.Equal(0, second.VerdictsChanged);
+    }
+
+    [Fact]
+    public async Task Un_patch_que_falla_al_persistir_no_aborta_la_pasada_y_el_error_queda_en_Errors()
+    {
+        var source = new FakeExecutionSource().Seed(
+            HistoryFixtures.OpenWithAttribute("core-patch", "OrderWorkflow"),
+            HistoryFixtures.OpenWithAttribute("core-patch", "ShippingWorkflow"));
+        var store = new FakePatchStateStore();
+        store.FailRecordFor(new Contracts.Domain.PatchKey("default", "OrderWorkflow", "core-patch"));
+
+        var summary = await RunAsync(source, store);
+
+        Assert.Equal(2, summary.PatchesDiscovered);
+        Assert.Equal(1, summary.PatchesAssessed);
+        var error = Assert.Single(summary.Errors);
+        Assert.Contains("fallo simulado", error);
+    }
+
+    [Fact]
+    public async Task MaxPatchesPerRun_acota_los_assessments_sin_afectar_lo_descubierto()
+    {
+        var saved = Environment.GetEnvironmentVariable("MONITOR_MAX_PATCHES_PER_RUN");
+        try
+        {
+            Environment.SetEnvironmentVariable("MONITOR_MAX_PATCHES_PER_RUN", "1");
+
+            var source = new FakeExecutionSource().Seed(
+                HistoryFixtures.OpenWithAttribute("core-patch", "OrderWorkflow"),
+                HistoryFixtures.OpenWithAttribute("core-patch", "ShippingWorkflow"));
+
+            var summary = await RunAsync(source, new FakePatchStateStore());
+
+            Assert.Equal(2, summary.PatchesDiscovered);
+            Assert.Equal(1, summary.PatchesAssessed);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MONITOR_MAX_PATCHES_PER_RUN", saved);
+        }
+    }
+
+    [Fact]
+    public async Task Fallo_de_descubrimiento_entero_hace_fallar_la_corrida()
+    {
+        var ex = await Assert.ThrowsAsync<WorkflowFailedException>(
+            () => RunAsync(new FailingExecutionSource(), new FakePatchStateStore()));
+
+        var activityFailure = Assert.IsType<ActivityFailureException>(ex.InnerException);
+        var appFailure = Assert.IsType<ApplicationFailureException>(activityFailure.InnerException);
+        Assert.Equal("DiscoveryConfigurationError", appFailure.ErrorType);
     }
 }

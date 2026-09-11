@@ -1,6 +1,7 @@
 using Contracts.Domain;
 using Contracts.Phase;
 using Contracts.State;
+using Temporalio.Exceptions;
 
 namespace PatchMonitor.Tests.Monitor;
 
@@ -9,14 +10,25 @@ namespace PatchMonitor.Tests.Monitor;
 /// cluster, la misma regla de avance de <c>Revision</c> que <c>PatchStateWorkflow</c> (spec 05)
 /// —solo sube cuando la tupla <c>(Phase, Verdict.Outcome, Verdict.NextPhase)</c> cambia—, para
 /// poder asertar <see cref="Contracts.Monitor.MonitorRunSummary.VerdictsChanged"/> sin levantar
-/// un entity workflow real.
+/// un entity workflow real. <see cref="FailRecordFor"/> simula un patch cuyo assessment no se
+/// puede persistir, para los tests de aislamiento de fallos.
 /// </summary>
 public sealed class FakePatchStateStore : IPatchStateStore
 {
     private readonly Dictionary<PatchKey, PatchState> _states = new();
+    private readonly HashSet<PatchKey> _failing = new();
+
+    /// <summary>A partir de ahora, <see cref="RecordAssessmentAsync"/> lanza para esta clave.</summary>
+    public void FailRecordFor(PatchKey key) => _failing.Add(key);
 
     public Task<PatchState> RecordAssessmentAsync(PatchAssessmentInput input, CancellationToken ct = default)
     {
+        if (_failing.Contains(input.Key))
+        {
+            throw new ApplicationFailureException(
+                $"fallo simulado registrando {input.Key}", errorType: "SimulatedFailure", nonRetryable: true);
+        }
+
         var current = _states.TryGetValue(input.Key, out var existing)
             ? existing
             : PatchState.Initial(input.Key);

@@ -3,6 +3,7 @@ using Contracts.Monitor;
 using Contracts.State;
 using Contracts.Workflows;
 using PatchMonitor.Activities;
+using Temporalio.Exceptions;
 using Temporalio.Workflows;
 
 namespace PatchMonitor.Workflows;
@@ -43,28 +44,37 @@ public class MonitorWorkflow : IMonitorWorkflow
 
         foreach (var patch in discovered.Take(options.MaxPatchesPerRun))
         {
-            var before = await Workflow
-                .ExecuteActivityAsync((PatchStateActivities a) => a.GetPatchStateAsync(patch.Key), Options)
-                .ConfigureAwait(true);
-            var revisionBefore = before?.Revision ?? 0;
-
-            var assessment = await Workflow
-                .ExecuteActivityAsync((PhaseActivities a) => a.AssessPatch(patch), Options)
-                .ConfigureAwait(true);
-
-            var input = new PatchAssessmentInput(
-                patch.Key, assessment.Resolution, assessment.Verdict, Workflow.UtcNow);
-
-            var state = await Workflow
-                .ExecuteActivityAsync((PatchStateActivities a) => a.RecordAssessmentAsync(input), Options)
-                .ConfigureAwait(true);
-
-            if (state.Revision > revisionBefore)
+            try
             {
-                verdictsChanged++;
-            }
+                var before = await Workflow
+                    .ExecuteActivityAsync((PatchStateActivities a) => a.GetPatchStateAsync(patch.Key), Options)
+                    .ConfigureAwait(true);
+                var revisionBefore = before?.Revision ?? 0;
 
-            patchesAssessed++;
+                var assessment = await Workflow
+                    .ExecuteActivityAsync((PhaseActivities a) => a.AssessPatch(patch), Options)
+                    .ConfigureAwait(true);
+
+                var input = new PatchAssessmentInput(
+                    patch.Key, assessment.Resolution, assessment.Verdict, Workflow.UtcNow);
+
+                var state = await Workflow
+                    .ExecuteActivityAsync((PatchStateActivities a) => a.RecordAssessmentAsync(input), Options)
+                    .ConfigureAwait(true);
+
+                if (state.Revision > revisionBefore)
+                {
+                    verdictsChanged++;
+                }
+
+                patchesAssessed++;
+            }
+            catch (ActivityFailureException ex)
+            {
+                // Aísla el fallo de este patch y sigue con los demás; el mensaje de la causa
+                // original (ApplicationFailureException u otra) es lo que interesa loguear.
+                errors.Add($"{patch.Key}: {ex.InnerException?.Message ?? ex.Message}");
+            }
         }
 
         return new MonitorRunSummary(
