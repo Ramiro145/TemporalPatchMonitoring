@@ -1,6 +1,7 @@
 using Contracts.Discovery;
 using Contracts.Domain.Gates;
 using Contracts.Monitor;
+using Contracts.Notification;
 using Contracts.Phase;
 using Contracts.State;
 using Microsoft.Extensions.DependencyInjection;
@@ -56,7 +57,37 @@ public static class ServiceCollectionExtensions
         // Pasada de monitoreo y Temporal Schedule que la dispara (spec 06).
         services.AddSingleton(_ => MonitorOptions.FromEnvironment());
 
-        // INotifier llega en el spec 07.
+        // Notificador pluggable (spec 07). NotificationOptions se lee una sola vez, acá y no
+        // por factory diferida como el resto de las *Options, porque la decisión de registrar
+        // o no WebhookNotifier depende de WebhookUrl y tiene que tomarse ahora, no al resolver.
+        var notificationOptions = NotificationOptions.FromEnvironment();
+        services.AddSingleton(notificationOptions);
+        services.AddSingleton(_ => new HttpClient());
+        services.AddSingleton<StructuredLogNotifier>();
+
+        if (notificationOptions.WebhookUrl is not null)
+        {
+            services.AddSingleton<WebhookNotifier>();
+        }
+
+        // El fan-out arma su lista de destinos a mano (log siempre, webhook si está
+        // configurado) en vez de dejar que el contenedor resuelva IEnumerable<INotifier>: así
+        // se puede registrar el propio CompositeNotifier como el único INotifier que ven los
+        // consumidores externos al fan-out (spec 08 y NotificationActivities) sin la recursión
+        // que traería incluirse a sí mismo en esa misma colección.
+        services.AddSingleton(sp =>
+        {
+            var leaves = new List<INotifier> { sp.GetRequiredService<StructuredLogNotifier>() };
+            if (sp.GetService<WebhookNotifier>() is { } webhook)
+            {
+                leaves.Add(webhook);
+            }
+
+            return new CompositeNotifier(leaves);
+        });
+        services.AddSingleton<INotifier>(sp => sp.GetRequiredService<CompositeNotifier>());
+        services.AddSingleton<NotificationActivities>();
+
         return services;
     }
 }

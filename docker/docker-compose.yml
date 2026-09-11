@@ -86,6 +86,12 @@ services:
       - MONITOR_INTERVAL_MINUTES=5
       - MONITOR_CATCHUP_WINDOW_MINUTES=10
       - MONITOR_MAX_PATCHES_PER_RUN=50
+      # Notificador pluggable (spec 07): log siempre, webhook si NOTIFIER_WEBHOOK_URL está seteada.
+      - NOTIFIER_ENABLED=true
+      - NOTIFIER_WEBHOOK_URL=
+      - NOTIFIER_WEBHOOK_AUTH_HEADER=
+      - NOTIFIER_WEBHOOK_TIMEOUT_SECONDS=10
+      - NOTIFIER_MAX_ATTEMPTS=3
     depends_on:
       temporal:
         condition: service_healthy

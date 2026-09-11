@@ -27,7 +27,11 @@ Console.WriteLine(created
 await WorkerHost.RunAsync<HealthWorkflow>(
     taskQueue,
     provider,
-    activityTypes: new[] { typeof(DiscoveryActivities), typeof(PhaseActivities), typeof(PatchStateActivities) },
+    activityTypes: new[]
+    {
+        typeof(DiscoveryActivities), typeof(PhaseActivities), typeof(PatchStateActivities),
+        typeof(NotificationActivities),
+    },
     additionalWorkflowTypes: new[]
     {
         typeof(PatchStateWorkflow), typeof(PatchRegistryWorkflow), typeof(MonitorWorkflow),

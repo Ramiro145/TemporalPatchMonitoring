@@ -18,6 +18,9 @@ public sealed class CompositeNotifier : INotifier
 
     public string Name => "composite";
 
+    /// <summary>Los notificadores del fan-out, para inspección en tests de registro DI.</summary>
+    public IReadOnlyList<INotifier> Notifiers => _notifiers;
+
     public async Task NotifyAsync(VerdictChangeNotification notification, CancellationToken ct = default)
     {
         var failures = new List<string>();
