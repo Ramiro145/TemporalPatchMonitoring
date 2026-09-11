@@ -1,0 +1,19 @@
+# Overlay para el spec 09: apunta el monitor al ReleaseOrderDemo real en vez de a su propio
+# cluster. Se aplica ENCIMA del compose base, sin tocarlo:
+#   docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d
+#
+# host.docker.internal:7233 es el puerto que ReleaseOrderDemo publica en el host; sin red
+# compartida y sin tocar una sola línea de ese repo.
+services:
+  patch-monitor-worker:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - TARGET_TEMPORAL_HOST=host.docker.internal:7233
+      - TARGET_TEMPORAL_NAMESPACE=default
+      - PHASE_CLEAN_GRACE_MINUTES=3
+      - DISCOVERY_LOOKBACK_DAYS=1
+
+  monitor-api:
+    environment:
+      - TARGET_TEMPORAL_HOST=host.docker.internal:7233
