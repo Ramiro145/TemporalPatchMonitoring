@@ -268,13 +268,38 @@ No hay un spec dedicado a tests. Cada spec lleva sus pruebas en `## Criterios de
 
 El proyecto se da por terminado cuando:
 
-- [ ] Los 10 specs están en estado `Implementado`.
-- [ ] `docker compose up` levanta Temporal + UI + `PatchMonitor` + `MonitorApi` sin SQL Server.
-- [ ] El monitor, apuntado a un namespace arbitrario, lista sus patches y la fase de cada uno sin
-      configuración específica de ese proyecto.
-- [ ] El Schedule corre cada 5 minutos y no hay ningún bucle de polling en el código.
-- [ ] Un cambio de veredicto genera exactamente una notificación, no una por corrida.
-- [ ] El escenario del artifact (fase 1 → gate 1→2 → fase 2) se reproduce end-to-end contra
-      `ReleaseOrderDemo` (spec 09).
+> **Nota (2026-09-11):** el spec 10 quedó diferido, no abandonado — ver la nota en §7, ítem 10, y
+> [[spec10-deferred-validate-elsewhere-first]]. Los dos ítems que dependen de él (el primero y el
+> último de esta lista) quedan sin marcar por eso, no porque algo haya fallado. Los cinco de en
+> medio ya están verificados con evidencia real de los specs 01-09.
+
+- [ ] Los 10 specs están en estado `Implementado`. *(01-09 sí, verificado: todos dicen
+      `Implementado`/`Implementada`. El 10 está diferido — ver nota arriba — y ni siquiera tiene
+      archivo de spec todavía.)*
+- [x] `docker compose up` levanta Temporal + UI + `PatchMonitor` + `MonitorApi` sin SQL Server.
+      *(Confirmado repetidas veces durante el spec 09: los 5 servicios de `docker-compose.yml`
+      quedan sanos — `temporal`, `temporal-db` (Postgres), `temporal-ui`, `patch-monitor-worker`,
+      `monitor-api` — sin ningún servicio de SQL Server.)*
+- [x] El monitor, apuntado a un namespace arbitrario, lista sus patches y la fase de cada uno sin
+      configuración específica de ese proyecto. *(Spec 09: apuntado al namespace `default` de
+      `ReleaseOrderDemo`, un repo ajeno, solo con `TARGET_TEMPORAL_HOST`/`TARGET_TEMPORAL_NAMESPACE`
+      — cero cambios de código. `GET /patches` reportó correctamente las 3 fases del patch real. Los
+      topes de descubrimiento (`DISCOVERY_LOOKBACK_DAYS` y similares) sí conviene dimensionarlos por
+      proyecto — ver `specs/09-...md` §"Límites conocidos" — pero eso es afinar una perilla
+      genérica, no escribir configuración específica del proyecto observado.)*
+- [x] El Schedule corre cada 5 minutos y no hay ningún bucle de polling en el código. *(Spec 09,
+      paso 10: corridas naturales de `MonitorWorkflow` en `21:55`, `22:00`, `22:05`, `22:10`,
+      `22:15` — cada 5 minutos exactos, sin gaps ni superposición, sin polling visible en los logs
+      entre ticks.)*
+- [x] Un cambio de veredicto genera exactamente una notificación, no una por corrida. *(Verificado
+      en el mismo paso 10: cada uno de los 7 cambios reales de revisión generó exactamente 1
+      notificación, y las corridas del Schedule sin cambio de estado generaron 0. No confundir con
+      el conteo total del recorrido — ese es un criterio distinto, ya corregido en
+      `specs/09-...md`, que hablaba de "dos notificaciones en todo el recorrido" y no de "una por
+      cambio".)*
+- [x] El escenario del artifact (fase 1 → gate 1→2 → fase 2) se reproduce end-to-end contra
+      `ReleaseOrderDemo` (spec 09). *(Reproducido de punta a punta, incluida la fase 3: evidencia en
+      `docs/e2e/evidence/00-baseline.json` a `05-phase3-clean.json`.)*
 - [ ] El `MonitorWorkflow` no tiene ningún `Workflow.Patched` ni `Workflow.DeprecatePatch` residual
-      tras el spec 10, y el drenaje bajo `docker compose stop` respeta los 30 s.
+      tras el spec 10, y el drenaje bajo `docker compose stop` respeta los 30 s. *(Bloqueado por el
+      spec 10 diferido — no aplica todavía.)*
