@@ -4,7 +4,9 @@ namespace Contracts.Monitor;
 /// Resultado de una pasada de <c>MonitorWorkflow</c>: lo que Temporal deja visible en la UI
 /// como resultado de la ejecución y lo que los tests asertan. <see cref="VerdictsChanged"/>
 /// cuenta los patches cuyo <c>Revision</c> (spec 05) avanzó durante esta pasada, es decir, cuyo
-/// veredicto cambió.
+/// veredicto cambió; <see cref="NotificationsSent"/> y <see cref="NotificationsFailed"/> (spec
+/// 07) cuentan cuántos de esos cambios lograron o no notificarse, sin que un fallo de
+/// notificación baje <see cref="PatchesAssessed"/>.
 /// </summary>
 public sealed record MonitorRunSummary(
     DateTimeOffset StartedAt,
@@ -13,4 +15,6 @@ public sealed record MonitorRunSummary(
     int PatchesAssessed,
     int VerdictsChanged,
     int OverridesLoaded,
-    IReadOnlyList<string> Errors);
+    IReadOnlyList<string> Errors,
+    int NotificationsSent,
+    int NotificationsFailed);

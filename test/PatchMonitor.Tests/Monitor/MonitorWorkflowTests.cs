@@ -1,11 +1,13 @@
 using Contracts.Discovery;
 using Contracts.Domain.Gates;
 using Contracts.Monitor;
+using Contracts.Notification;
 using Contracts.Phase;
 using Contracts.Workflows;
 using PatchMonitor.Activities;
 using PatchMonitor.Services;
 using PatchMonitor.Tests.Discovery;
+using PatchMonitor.Tests.Notification;
 using PatchMonitor.Workflows;
 using Temporalio.Client;
 using Temporalio.Exceptions;
@@ -25,7 +27,8 @@ public class MonitorWorkflowTests
     private static readonly DiscoveryOptions Discovery =
         new("default", LookbackDays: 7, MaxExecutions: 500, MaxHistories: 200);
 
-    private static async Task<MonitorRunSummary> RunAsync(IExecutionSource source, FakePatchStateStore store)
+    private static async Task<MonitorRunSummary> RunAsync(
+        IExecutionSource source, FakePatchStateStore store, IEnumerable<INotifier>? notifiers = null)
     {
         await using var env = await WorkflowEnvironment.StartTimeSkippingAsync();
         var taskQueue = $"monitor-{Guid.NewGuid():N}";
@@ -43,11 +46,14 @@ public class MonitorWorkflowTests
             }),
             new InMemoryPhaseOverrideStore());
         var stateActivities = new PatchStateActivities(store, new InMemoryPhaseOverrideStore());
+        var notificationActivities = new NotificationActivities(
+            store, new CompositeNotifier(notifiers ?? new INotifier[] { new FakeNotifier("log") }));
 
         var options = new TemporalWorkerOptions(taskQueue).AddWorkflow<MonitorWorkflow>();
         options.AddAllActivities(discoveryActivities);
         options.AddAllActivities(phaseActivities);
         options.AddAllActivities(stateActivities);
+        options.AddAllActivities(notificationActivities);
 
         using var worker = new TemporalWorker(env.Client, options);
 
@@ -130,6 +136,53 @@ public class MonitorWorkflowTests
         {
             Environment.SetEnvironmentVariable("MONITOR_MAX_PATCHES_PER_RUN", saved);
         }
+    }
+
+    [Fact]
+    public async Task Un_cambio_de_veredicto_con_notificador_que_no_falla_produce_una_notificacion()
+    {
+        var source = new FakeExecutionSource().Seed(
+            HistoryFixtures.OpenWithAttribute("core-patch", "OrderWorkflow"),
+            HistoryFixtures.OpenWithAttribute("core-patch", "ShippingWorkflow"));
+        var notifier = new FakeNotifier("log");
+
+        var summary = await RunAsync(source, new FakePatchStateStore(), new INotifier[] { notifier });
+
+        Assert.True(summary.VerdictsChanged > 0);
+        Assert.Equal(summary.VerdictsChanged, summary.NotificationsSent);
+        Assert.Equal(0, summary.NotificationsFailed);
+    }
+
+    [Fact]
+    public async Task Una_segunda_pasada_sin_cambio_no_produce_notificaciones()
+    {
+        var source = new FakeExecutionSource().Seed(
+            HistoryFixtures.OpenWithAttribute("core-patch", "OrderWorkflow"),
+            HistoryFixtures.OpenWithAttribute("core-patch", "ShippingWorkflow"));
+        var store = new FakePatchStateStore();
+        var notifier = new FakeNotifier("log");
+
+        await RunAsync(source, store, new INotifier[] { notifier });
+
+        var second = await RunAsync(source, store, new INotifier[] { notifier });
+
+        Assert.Equal(0, second.VerdictsChanged);
+        Assert.Equal(0, second.NotificationsSent);
+    }
+
+    [Fact]
+    public async Task Un_notificador_que_siempre_falla_cuenta_NotificationsFailed_sin_afectar_el_assessment()
+    {
+        var source = new FakeExecutionSource().Seed(
+            HistoryFixtures.OpenWithAttribute("core-patch", "OrderWorkflow"),
+            HistoryFixtures.OpenWithAttribute("core-patch", "ShippingWorkflow"));
+        var notifier = new FakeNotifier("log", fails: true);
+
+        var summary = await RunAsync(source, new FakePatchStateStore(), new INotifier[] { notifier });
+
+        Assert.Equal(2, summary.PatchesAssessed);
+        Assert.True(summary.NotificationsFailed > 0);
+        Assert.DoesNotContain(summary.Errors, e => !e.Contains("(notificación)"));
     }
 
     [Fact]
