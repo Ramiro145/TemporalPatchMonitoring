@@ -19,9 +19,16 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- SDK no-Web: sin esta referencia no se puede usar IResult ni los tipos de
+         Microsoft.AspNetCore.Http.HttpResults que devuelven los handlers de MonitorApi. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Contracts\Contracts.csproj" />
     <ProjectReference Include="..\..\src\Common\Common.csproj" />
     <ProjectReference Include="..\..\src\PatchMonitor\PatchMonitor.csproj" />
+    <ProjectReference Include="..\..\src\MonitorApi\MonitorApi.csproj" />
   </ItemGroup>
 
 </Project>

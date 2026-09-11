@@ -16,10 +16,29 @@ namespace PatchMonitor.Tests.Monitor;
 public sealed class FakePatchStateStore : IPatchStateStore
 {
     private readonly Dictionary<PatchKey, PatchState> _states = new();
+    private readonly HashSet<PatchKey> _keys = new();
     private readonly HashSet<PatchKey> _failing = new();
+    private readonly HashSet<PatchKey> _failingGet = new();
 
     /// <summary>A partir de ahora, <see cref="RecordAssessmentAsync"/> lanza para esta clave.</summary>
     public void FailRecordFor(PatchKey key) => _failing.Add(key);
+
+    /// <summary>
+    /// A partir de ahora, <see cref="GetStateAsync"/> lanza para esta clave (simula un entity
+    /// ilegible); la clave igual aparece en <see cref="ListAsync"/>, como en el registry real.
+    /// </summary>
+    public void FailGetFor(PatchKey key)
+    {
+        _failingGet.Add(key);
+        _keys.Add(key);
+    }
+
+    /// <summary>Siembra el estado de una clave directamente, sin pasar por <see cref="RecordAssessmentAsync"/>.</summary>
+    public void Seed(PatchKey key, PatchState state)
+    {
+        _states[key] = state;
+        _keys.Add(key);
+    }
 
     public Task<PatchState> RecordAssessmentAsync(PatchAssessmentInput input, CancellationToken ct = default)
     {
@@ -58,16 +77,24 @@ public sealed class FakePatchStateStore : IPatchStateStore
             };
 
         _states[input.Key] = next;
+        _keys.Add(input.Key);
         return Task.FromResult(next);
     }
 
-    public Task<PatchState?> GetStateAsync(PatchKey key, CancellationToken ct = default) =>
-        Task.FromResult(_states.TryGetValue(key, out var state) ? state : null);
+    public Task<PatchState?> GetStateAsync(PatchKey key, CancellationToken ct = default)
+    {
+        if (_failingGet.Contains(key))
+        {
+            throw new InvalidOperationException($"fallo simulado leyendo {key}");
+        }
+
+        return Task.FromResult(_states.TryGetValue(key, out var state) ? state : null);
+    }
 
     public Task RegisterAsync(PatchKey key, CancellationToken ct = default) => Task.CompletedTask;
 
     public Task<IReadOnlyList<PatchKey>> ListAsync(CancellationToken ct = default) =>
-        Task.FromResult<IReadOnlyList<PatchKey>>(_states.Keys.ToArray());
+        Task.FromResult<IReadOnlyList<PatchKey>>(_keys.ToArray());
 
     public Task<IReadOnlyList<PhaseOverride>> LoadActiveOverridesAsync(CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<PhaseOverride>>(
