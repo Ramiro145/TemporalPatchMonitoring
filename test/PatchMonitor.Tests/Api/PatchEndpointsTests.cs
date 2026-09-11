@@ -113,4 +113,139 @@ public class PatchEndpointsTests
 
         Assert.IsType<NotFound>(result.Result);
     }
+
+    [Fact]
+    public async Task SetOverride_con_Phase_Unknown_devuelve_BadRequest()
+    {
+        var store = new FakePatchStateStore();
+        store.Seed(KeyA, Assessed(KeyA));
+        var request = new SetOverrideRequest(PatchPhase.Unknown, "operador", null);
+
+        var result = await PatchEndpoints.SetOverrideAsync(
+            KeyA.Namespace, KeyA.WorkflowType, KeyA.PatchId, request, force: null, store, Options());
+
+        Assert.IsType<BadRequest<string>>(result.Result);
+    }
+
+    [Fact]
+    public async Task SetOverride_con_DeclaredBy_vacio_devuelve_BadRequest()
+    {
+        var store = new FakePatchStateStore();
+        store.Seed(KeyA, Assessed(KeyA));
+        var request = new SetOverrideRequest(PatchPhase.Deprecated, "", null);
+
+        var result = await PatchEndpoints.SetOverrideAsync(
+            KeyA.Namespace, KeyA.WorkflowType, KeyA.PatchId, request, force: null, store, Options());
+
+        Assert.IsType<BadRequest<string>>(result.Result);
+    }
+
+    [Fact]
+    public async Task SetOverride_con_ExpiresAt_en_el_pasado_devuelve_BadRequest()
+    {
+        var store = new FakePatchStateStore();
+        store.Seed(KeyA, Assessed(KeyA));
+        var request = new SetOverrideRequest(
+            PatchPhase.Deprecated, "operador", DateTimeOffset.UtcNow.AddHours(-1));
+
+        var result = await PatchEndpoints.SetOverrideAsync(
+            KeyA.Namespace, KeyA.WorkflowType, KeyA.PatchId, request, force: null, store, Options());
+
+        Assert.IsType<BadRequest<string>>(result.Result);
+    }
+
+    [Fact]
+    public async Task SetOverride_de_un_patch_inexistente_devuelve_NotFound()
+    {
+        var store = new FakePatchStateStore();
+        var request = new SetOverrideRequest(PatchPhase.Deprecated, "operador", null);
+
+        var result = await PatchEndpoints.SetOverrideAsync(
+            KeyA.Namespace, KeyA.WorkflowType, KeyA.PatchId, request, force: null, store, Options());
+
+        Assert.IsType<NotFound>(result.Result);
+    }
+
+    [Fact]
+    public async Task SetOverride_con_salto_legal_devuelve_200_y_aplica_el_ttl_por_default()
+    {
+        var store = new FakePatchStateStore();
+        store.Seed(KeyA, Assessed(KeyA));
+        var request = new SetOverrideRequest(PatchPhase.Deprecated, "operador", null);
+        var before = DateTimeOffset.UtcNow;
+
+        var result = await PatchEndpoints.SetOverrideAsync(
+            KeyA.Namespace, KeyA.WorkflowType, KeyA.PatchId, request, force: null, store, Options());
+
+        var ok = Assert.IsType<Ok<PatchDetailResponse>>(result.Result);
+        Assert.Equal(PatchPhase.Deprecated, ok.Value!.Summary.Phase);
+        var expectedExpiry = before + TimeSpan.FromHours(24);
+        Assert.True(Math.Abs((ok.Value.Override!.ExpiresAt!.Value - expectedExpiry).TotalSeconds) < 5);
+    }
+
+    [Fact]
+    public async Task SetOverride_con_salto_ilegal_devuelve_Conflict_sin_tocar_el_store()
+    {
+        var store = new FakePatchStateStore();
+        store.Seed(KeyA, Assessed(KeyA));
+        var request = new SetOverrideRequest(PatchPhase.Clean, "operador", null);
+
+        var result = await PatchEndpoints.SetOverrideAsync(
+            KeyA.Namespace, KeyA.WorkflowType, KeyA.PatchId, request, force: null, store, Options());
+
+        Assert.IsType<Conflict<string>>(result.Result);
+        var state = await store.GetStateAsync(KeyA);
+        Assert.Null(state!.Override);
+    }
+
+    [Fact]
+    public async Task SetOverride_con_salto_ilegal_y_force_devuelve_200()
+    {
+        var store = new FakePatchStateStore();
+        store.Seed(KeyA, Assessed(KeyA));
+        var request = new SetOverrideRequest(PatchPhase.Clean, "operador", null);
+
+        var result = await PatchEndpoints.SetOverrideAsync(
+            KeyA.Namespace, KeyA.WorkflowType, KeyA.PatchId, request, force: true, store, Options());
+
+        var ok = Assert.IsType<Ok<PatchDetailResponse>>(result.Result);
+        Assert.Equal(PatchPhase.Clean, ok.Value!.Summary.Phase);
+    }
+
+    [Fact]
+    public async Task SetOverride_redeclarando_la_misma_fase_vigente_devuelve_200_no_Conflict()
+    {
+        var store = new FakePatchStateStore();
+        store.Seed(KeyA, Assessed(KeyA));
+        var request = new SetOverrideRequest(PatchPhase.Coexistence, "operador", null);
+
+        var result = await PatchEndpoints.SetOverrideAsync(
+            KeyA.Namespace, KeyA.WorkflowType, KeyA.PatchId, request, force: null, store, Options());
+
+        Assert.IsType<Ok<PatchDetailResponse>>(result.Result);
+    }
+
+    [Fact]
+    public async Task ClearOverride_sobre_un_patch_sin_override_es_idempotente()
+    {
+        var store = new FakePatchStateStore();
+        store.Seed(KeyA, Assessed(KeyA));
+
+        var result = await PatchEndpoints.ClearOverrideAsync(
+            KeyA.Namespace, KeyA.WorkflowType, KeyA.PatchId, store);
+
+        var ok = Assert.IsType<Ok<PatchDetailResponse>>(result.Result);
+        Assert.Null(ok.Value!.Override);
+    }
+
+    [Fact]
+    public async Task ClearOverride_sobre_un_patch_inexistente_devuelve_NotFound()
+    {
+        var store = new FakePatchStateStore();
+
+        var result = await PatchEndpoints.ClearOverrideAsync(
+            KeyA.Namespace, KeyA.WorkflowType, KeyA.PatchId, store);
+
+        Assert.IsType<NotFound>(result.Result);
+    }
 }

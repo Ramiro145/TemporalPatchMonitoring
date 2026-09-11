@@ -1,5 +1,6 @@
 using Contracts.Api;
 using Contracts.Domain;
+using Contracts.Phase;
 using Contracts.State;
 using Microsoft.AspNetCore.Http.HttpResults;
 
@@ -50,5 +51,58 @@ public static class PatchEndpoints
         return state is null
             ? TypedResults.NotFound()
             : TypedResults.Ok(PatchDetailResponse.FromState(state));
+    }
+
+    public static async Task<Results<Ok<PatchDetailResponse>, BadRequest<string>, NotFound, Conflict<string>>> SetOverrideAsync(
+        string ns, string type, string patchId, SetOverrideRequest request, bool? force,
+        IPatchStateStore store, ApiOptions options, CancellationToken ct = default)
+    {
+        if (request.Phase == PatchPhase.Unknown || string.IsNullOrWhiteSpace(request.DeclaredBy))
+        {
+            return TypedResults.BadRequest(
+                "Phase no puede ser Unknown y DeclaredBy no puede estar vacío.");
+        }
+
+        var declaredAt = DateTimeOffset.UtcNow;
+        if (request.ExpiresAt is { } expiresAt && expiresAt <= declaredAt)
+        {
+            return TypedResults.BadRequest("ExpiresAt ya pasó.");
+        }
+
+        var key = new PatchKey(ns, type, patchId);
+        var state = await store.GetStateAsync(key, ct).ConfigureAwait(false);
+        if (state is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        // Redeclarar la fase vigente no es un salto: nunca da 409, con o sin force.
+        var isJump = request.Phase != state.Phase;
+        if (isJump && !PhaseTransition.IsLegal(state.Phase, request.Phase) && force != true)
+        {
+            return TypedResults.Conflict(
+                $"Transición ilegal de {state.Phase} a {request.Phase}. Repetí con ?force=true si es una corrección deliberada.");
+        }
+
+        var ov = new PhaseOverride(
+            key, request.Phase, request.DeclaredBy, declaredAt,
+            request.ExpiresAt ?? declaredAt + options.OverrideDefaultTtl);
+
+        var updated = await store.SetOverrideAsync(ov, ct).ConfigureAwait(false);
+        return TypedResults.Ok(PatchDetailResponse.FromState(updated));
+    }
+
+    public static async Task<Results<Ok<PatchDetailResponse>, NotFound>> ClearOverrideAsync(
+        string ns, string type, string patchId, IPatchStateStore store, CancellationToken ct = default)
+    {
+        var key = new PatchKey(ns, type, patchId);
+        var state = await store.GetStateAsync(key, ct).ConfigureAwait(false);
+        if (state is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        var updated = await store.ClearOverrideAsync(key, ct).ConfigureAwait(false);
+        return TypedResults.Ok(PatchDetailResponse.FromState(updated));
     }
 }

@@ -103,11 +103,23 @@ public sealed class FakePatchStateStore : IPatchStateStore
                 .Select(s => s.Override!)
                 .ToArray());
 
-    public Task<PatchState> SetOverrideAsync(PhaseOverride ov, CancellationToken ct = default) =>
-        throw new NotSupportedException("No lo usa MonitorWorkflow.");
+    public Task<PatchState> SetOverrideAsync(PhaseOverride ov, CancellationToken ct = default)
+    {
+        var current = _states.TryGetValue(ov.Key, out var existing) ? existing : PatchState.Initial(ov.Key);
+        var next = current with { Phase = ov.Phase, Source = PhaseSource.Override, Override = ov };
+        _states[ov.Key] = next;
+        _keys.Add(ov.Key);
+        return Task.FromResult(next);
+    }
 
-    public Task<PatchState> ClearOverrideAsync(PatchKey key, CancellationToken ct = default) =>
-        throw new NotSupportedException("No lo usa MonitorWorkflow.");
+    public Task<PatchState> ClearOverrideAsync(PatchKey key, CancellationToken ct = default)
+    {
+        var current = _states.TryGetValue(key, out var existing) ? existing : PatchState.Initial(key);
+        var next = current with { Override = null };
+        _states[key] = next;
+        _keys.Add(key);
+        return Task.FromResult(next);
+    }
 
     public Task<bool> TryClaimNotificationAsync(PatchKey key, int revision, CancellationToken ct = default)
     {
