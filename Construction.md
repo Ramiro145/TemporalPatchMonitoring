@@ -175,7 +175,7 @@ Derivada de las 6 specs de `ReleaseOrderDemo`. Cada `/spec` que se cree debe res
 | 07 | `pluggable-notifier` | Notificar **una sola vez** por cambio de veredicto, vía webhook o log estructurado | 06 |
 | 08 | `control-api` | Superficie HTTP única: listar, consultar, chequear on-demand, pausar/reanudar, override manual de fase | 07 |
 | 09 | `multi-target-e2e-validation` | Apuntar el monitor al `ReleaseOrderDemo` real y reproducir el recorrido de fases del artifact | 08 |
-| 10 | `self-versioning-and-drain` | Aplicar el ciclo `Patched → DeprecatePatch → limpio` al propio `MonitorWorkflow` | 09 |
+| 10 | `self-versioning-and-drain` | Aplicar el ciclo `Patched → DeprecatePatch → limpio` al propio `MonitorWorkflow` — **diferido, ver nota abajo** | 09 |
 
 ### Por qué van en ese orden
 
@@ -241,6 +241,16 @@ del spec 05 **nunca cierran**, así que cambiarles el código exige `Workflow.Pa
 gate 1→2 solo se habilita gracias al `Continue-As-New` que introdujo el 05. Entrega el recorrido de
 3 fases aplicado al `MonitorWorkflow` + la verificación del drenaje ordenado bajo
 `docker compose stop`.
+
+> **Diferido (decidido con el usuario el 2026-09-11).** El spec 09 ya demostró con evidencia real
+> que el objetivo central del README se cumple: el monitor apunta a un proyecto ajeno sin tocar su
+> código. Antes de invertir en este spec 10 (que es introspectivo — versiona el propio monitor, no
+> agrega capacidad de observar proyectos nuevos), la prioridad pasa a ser **probar el monitor contra
+> un segundo proyecto real distinto de `ReleaseOrderDemo`**, que es lo que efectivamente valida la
+> promesa de "genérico, reusable en otros proyectos". Ver `specs/09-multi-target-e2e-validation.md`,
+> sección "Límites conocidos para reusar esto en otro proyecto", para la lista concreta de qué mirar
+> en esa próxima prueba. Este spec 10 queda documentado y listo para retomarse — no se descarta, solo
+> se re-prioriza detrás de esa validación.
 
 ### Testing
 
