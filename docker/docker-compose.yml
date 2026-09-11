@@ -81,6 +81,11 @@ services:
       # tope del ring buffer de cambios que sobrevive a ese salto.
       - PATCH_STATE_CAN_THRESHOLD=500
       - PATCH_STATE_HISTORY_LIMIT=20
+      # Temporal Schedule que dispara MonitorWorkflow (spec 06).
+      - MONITOR_SCHEDULE_ID=patch-monitor-schedule
+      - MONITOR_INTERVAL_MINUTES=5
+      - MONITOR_CATCHUP_WINDOW_MINUTES=10
+      - MONITOR_MAX_PATCHES_PER_RUN=50
     depends_on:
       temporal:
         condition: service_healthy

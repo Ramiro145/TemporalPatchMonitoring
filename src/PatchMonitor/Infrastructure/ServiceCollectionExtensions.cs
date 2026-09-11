@@ -1,5 +1,6 @@
 using Contracts.Discovery;
 using Contracts.Domain.Gates;
+using Contracts.Monitor;
 using Contracts.Phase;
 using Contracts.State;
 using Microsoft.Extensions.DependencyInjection;
@@ -51,6 +52,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IDecisionSink, NoopDecisionSink>();
         services.AddSingleton<IPatchStateStore, TemporalPatchStateStore>();
         services.AddSingleton<PatchStateActivities>();
+
+        // Pasada de monitoreo y Temporal Schedule que la dispara (spec 06).
+        services.AddSingleton(_ => MonitorOptions.FromEnvironment());
 
         // INotifier llega en el spec 07.
         return services;
