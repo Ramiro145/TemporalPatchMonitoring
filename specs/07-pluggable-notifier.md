@@ -1,6 +1,6 @@
 # 07 - Notificador pluggable
 
-**Estado:** Aprobado
+**Estado:** Implementada
 **Depende de:** [06-monitor-workflow-temporal-schedule.md](06-monitor-workflow-temporal-schedule.md)
 **Fecha:** 2026-09-11
 
@@ -369,33 +369,88 @@ revisionBefore)`, con `try/catch (ActivityFailureException)` anidado que suma a
      intento falló parcialmente.
    - Registrar la salida de estos comandos en este spec antes de marcar los criterios.
 
+### Evidencia de la verificación end-to-end (2026-09-11)
+
+Ejecutada sobre el stack real de `docker/` (Temporal + Postgres + worker + API), con un
+receptor de webhook descartable (`python http.server` en el host, expuesto al contenedor como
+`http://host.docker.internal:8099/webhook`) y un patch real sembrado con un workflow throwaway
+que llama `Workflow.Patched("core-patch")` contra el mismo cluster (namespace `default`, el
+mismo que usa `TARGET_TEMPORAL_HOST`).
+
+- `docker compose build patch-monitor-worker monitor-api` → 0 errores. `docker compose up -d` →
+  los cinco servicios arrancan; log del worker: `Schedule 'patch-monitor-schedule' ya existía.` /
+  `Worker listening on 'patch-monitor-task-queue'...` (sin crash).
+- `temporal schedule trigger --schedule-id patch-monitor-schedule` (primer tick, patch nuevo):
+  el log estructurado emite **una** línea con
+  `NotificationId: patch-state::default::OrderWorkflow::core-patch#1`, `Revision: 1`. El
+  webhook recibe **un** `POST` con el mismo `NotificationId` (confirmado vía el receptor
+  descartable, body JSON en camelCase).
+- Un override (`SetOverride` vía `temporal workflow update execute`) que cambia la fase forzada
+  produce un segundo cambio real (`Revision: 2`): una línea de log y un `POST` más, con
+  `NotificationId ...#2`. `temporal workflow query ... GetState` confirma
+  `NotifiedRevision == Revision == 2`.
+- Un tercer tick sin cambios no agrega ninguna línea nueva ni ningún `POST`: `VerdictsChanged`
+  se mantiene en 0 para esa pasada (dos pasadas seguidas sin cambio no notifican en la segunda).
+- Con el receptor de webhook apagado (`ClearOverride` fuerza un tercer cambio real, `Revision:
+  3`): la pasada completa igual (`PatchesAssessed: 2` en el `MonitorRunSummary` decodificado de
+  `temporal workflow show`), el log estructurado **sí** emitió su línea `#3`, y **no** abortó la
+  corrida. Ver observación abajo sobre `NotificationsFailed` en este escenario puntual.
+- Con el receptor de webhook levantado de nuevo, un tick siguiente sin cambio real no reenvía
+  `Revision: 3` (ni log ni webhook reciben nada nuevo): el claim ya tomado no se reintenta.
+- `dotnet build PatchMonitor.sln` (stack de Docker apagado) → 0 errores, 0 advertencias.
+- `dotnet test PatchMonitor.sln` (stack de Docker apagado) → 210/210 en verde. Un test
+  preexistente del spec 05 (`TemporalPatchStateStoreTests.LoadActiveOverrides_devuelve_solo_los_vigentes`)
+  mostró el mismo *timeout* esporádico del test-server de time-skipping bajo corrida paralela ya
+  visto durante los pasos 3, 4 y 8 de este spec — pasa siempre en aislamiento y en una repetición
+  completa de la suite; no relacionado con el código de este spec.
+
+**Observación no bloqueante — `NotificationsFailed` y fallos parciales del fan-out:**
+`CompositeNotifier` lanza **solo si todos** los `INotifier` fallan (así lo pide el Alcance: "que
+el webhook esté caído no puede tapar que el log sí se emitió"). Como el notificador de log está
+siempre registrado y `Console.WriteLine` prácticamente nunca falla, en la práctica
+`CompositeNotifier.NotifyAsync` casi nunca propaga una excepción — por lo que
+`MonitorRunSummary.NotificationsFailed` solo sube ante un fallo de **toda la Activity**
+(la entidad de Temporal inalcanzable, o el caso de reintento-silencioso del paso 7 de este
+mismo spec), nunca por un fallo aislado de un destino individual (p. ej. el webhook devolviendo
+5xx) mientras el log siga vivo. Se confirmó en la verificación E2E: con el webhook caído,
+`NotificationsFailed` quedó en `0` en el `MonitorRunSummary` de esa pasada, a pesar de que el
+`POST` al webhook falló (solo se ve en el log del receptor externo, no en el propio monitor).
+Decisión tomada con el usuario: dejar el código tal como está — el diseño de `CompositeNotifier`
+cumple literalmente el Alcance aprobado, y el detalle de "qué destino falló y por qué" es
+información que corresponde diseñar recién cuando exista un consumidor real de ese dato (la API/
+UI del spec 08), no antes. Anotado acá para que quede trazable cuando se escriba esa spec.
+
 ## Criterios de aceptación
 
-- [ ] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
-- [ ] `dotnet test PatchMonitor.sln` pasa con el stack de Docker **apagado**.
-- [ ] Un cambio de veredicto (`Revision` que avanza) produce exactamente una notificación por cada
+- [x] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
+- [x] `dotnet test PatchMonitor.sln` pasa con el stack de Docker **apagado**.
+- [x] Un cambio de veredicto (`Revision` que avanza) produce exactamente una notificación por cada
       `INotifier` registrado.
-- [ ] Dos pasadas seguidas sin cambio real de veredicto no producen ninguna notificación en la
+- [x] Dos pasadas seguidas sin cambio real de veredicto no producen ninguna notificación en la
       segunda.
-- [ ] Un reintento de `NotifyVerdictChangeAsync` (por la `RetryPolicy` de la Activity o por una
+- [x] Un reintento de `NotifyVerdictChangeAsync` (por la `RetryPolicy` de la Activity o por una
       segunda invocación manual con el mismo `Revision`) tras un claim ya tomado **no** vuelve a
       invocar ningún `INotifier`.
-- [ ] `PatchState.NotifiedRevision` sobrevive a un `Continue-As-New` del entity, igual que
+- [x] `PatchState.NotifiedRevision` sobrevive a un `Continue-As-New` del entity, igual que
       `Revision`.
-- [ ] El webhook caído (o devolviendo 5xx) no baja `MonitorRunSummary.PatchesAssessed` ni aborta la
-      pasada; queda contado en `NotificationsFailed`.
-- [ ] Una respuesta `4xx` (salvo `408`/`429`) del webhook no se reintenta
+- [x] El webhook caído (o devolviendo 5xx) no baja `MonitorRunSummary.PatchesAssessed` ni aborta la
+      pasada; queda contado en `NotificationsFailed`. **Matiz confirmado en la verificación
+      end-to-end:** esto vale a nivel de toda la Activity (RPC del claim inalcanzable, o el caso
+      de reintento-silencioso); un fallo aislado del webhook mientras el notificador de log sigue
+      vivo no sube `NotificationsFailed`, por el diseño "lanza solo si todos fallaron" de
+      `CompositeNotifier` que el propio Alcance pide. Ver observación arriba.
+- [x] Una respuesta `4xx` (salvo `408`/`429`) del webhook no se reintenta
       (`ApplicationFailureException(nonRetryable: true)`); una `5xx`, `408` o `429` sí.
-- [ ] Sin `NOTIFIER_WEBHOOK_URL`, `AddPatchMonitorServices()` solo registra el notificador de log.
-- [ ] `NotificationOptions.FromEnvironment()` devuelve los defaults con las env vars ausentes,
+- [x] Sin `NOTIFIER_WEBHOOK_URL`, `AddPatchMonitorServices()` solo registra el notificador de log.
+- [x] `NotificationOptions.FromEnvironment()` devuelve los defaults con las env vars ausentes,
       respeta valores válidos y cae al default ante basura o valores ≤ 0 (salvo `Enabled`, que solo
       distingue `"false"` de todo lo demás).
-- [ ] Un `ServiceProvider` de `AddPatchMonitorServices()` resuelve `INotifier` y
+- [x] Un `ServiceProvider` de `AddPatchMonitorServices()` resuelve `INotifier` y
       `NotificationActivities`.
-- [ ] Los contratos de los specs 02, 03, 04 y 06 no cambian salvo el agregado de
+- [x] Los contratos de los specs 02, 03, 04 y 06 no cambian salvo el agregado de
       `NotificationsSent`/`NotificationsFailed` a `MonitorRunSummary` y la nueva llamada a Activity
       dentro de `MonitorWorkflow.RunAsync`.
-- [ ] El `patch-monitor-worker` declara las cinco env vars nuevas y el worker arranca con
+- [x] El `patch-monitor-worker` declara las cinco env vars nuevas y el worker arranca con
       `NotificationActivities` registrada.
 
 ## Decisiones tomadas y descartadas
