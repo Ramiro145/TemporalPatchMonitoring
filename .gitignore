@@ -2,3 +2,10 @@ obj/
 bin/
 .vs/
 *.user
+
+# web/ (spec 11)
+node_modules/
+web/dist/
+.vite/
+*.log
+.env.local

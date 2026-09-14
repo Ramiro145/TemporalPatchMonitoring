@@ -46,11 +46,13 @@ marker del patch. PatchMonitor automatiza exactamente esa revisión.
 
 - **Docker Desktop** (o Docker Engine + Compose v2). Es lo único necesario para correrlo.
 - **.NET 8 SDK**, solo si vas a compilar o correr los tests fuera de Docker.
+- **Node 24**, solo si vas a correr el dashboard (`web/`) con `npm run dev` en vez de por Docker.
 - Un cluster de Temporal a observar (opcional para una primera prueba: por defecto el monitor se
   observa a sí mismo).
 
 Stack: .NET 8, `Temporalio` 1.9.0, `temporalio/auto-setup:1.23.0`, `temporalio/ui:2.23.0`,
-Postgres 15. **Sin SQL Server**: el estado del monitor vive en Temporal mismo.
+Postgres 15, React 19 + Vite + TypeScript (`web/`, spec 11). **Sin SQL Server**: el estado del
+monitor vive en Temporal mismo.
 
 ## Levantarlo
 
@@ -59,7 +61,7 @@ Desde la carpeta `docker/`:
 ```powershell
 docker compose build
 docker compose up -d
-docker compose ps          # los 5 servicios deben quedar arriba
+docker compose ps          # los 6 servicios deben quedar arriba
 ```
 
 | Servicio | Qué es | Puerto en el host |
@@ -69,9 +71,10 @@ docker compose ps          # los 5 servicios deben quedar arriba
 | `temporal-ui` | UI web de ese cluster | `8234` → <http://localhost:8234> |
 | `patch-monitor-worker` | Worker: descubre, evalúa, persiste y notifica | — |
 | `monitor-api` | API HTTP de consulta y control | `5100` → <http://localhost:5100/swagger> |
+| `monitor-web` | Dashboard web de observabilidad (spec 11) | `5101` → <http://localhost:5101> |
 
-Los puertos están corridos (7234, 8234, 5433) a propósito, para poder correr en la misma máquina
-que un proyecto que ya use 7233/8233/5432.
+Los puertos están corridos (7234, 8234, 5433, 5100, 5101) a propósito, para poder correr en la
+misma máquina que un proyecto que ya use 7233/8233/5432.
 
 Al arrancar, el worker crea el Schedule `patch-monitor-schedule` (idempotente) y desde ahí corre
 una pasada cada 5 minutos. Para comprobar que está vivo:
@@ -234,6 +237,34 @@ Sin `expiresAt`, el override vence a las `API_OVERRIDE_DEFAULT_TTL_HOURS` (24 h 
 
 ---
 
+## Dashboard web
+
+<http://localhost:5101> (spec 11) muestra de un vistazo qué patches hay, en qué fase está cada uno
+y qué lo bloquea, sin depender de Swagger: salud del cluster, estado del Schedule con *Disparar
+ahora*/*Pausar*/*Reanudar*, la tabla de patches (`Ready` primero), el detalle de cada uno
+(veredicto actual/anterior, override, historial) y las últimas corridas del monitor. Solo lectura y
+control del Schedule — la gestión de overrides sigue por Swagger.
+
+Corre en `web/` (React + Vite + TypeScript). Dos caminos equivalentes:
+
+```powershell
+# nginx, dentro del stack de Docker (docker compose up -d)
+# → http://localhost:5101
+
+# dev server con hot reload, contra el monitor-api del compose
+cd web
+npm install
+npm run dev
+# → http://localhost:5173
+```
+
+En ambos casos el front llama a rutas relativas `/api/...`; nunca hardcodea `localhost:5100` — en
+`:5173` lo resuelve el proxy de Vite, en `:5101` el `location /api/` de nginx. `API_CORS_ORIGINS`
+en `monitor-api` solo importa si corrés `npm run dev` sin el proxy (ver `docker/nginx.conf` y
+`web/vite.config.ts`).
+
+---
+
 ## Configuración
 
 Todas las variables son opcionales; un valor ausente, no numérico o no positivo cae al default.
@@ -262,6 +293,8 @@ Todas las variables son opcionales; un valor ausente, no numérico o no positivo
 | `NOTIFIER_MAX_ATTEMPTS` | `3` | Reintentos de la notificación |
 | `API_MAX_LIST_PATCHES` | `100` | Tope de `GET /patches` |
 | `API_OVERRIDE_DEFAULT_TTL_HOURS` | `24` | Vencimiento por defecto de un override |
+| `API_MAX_LIST_RUNS` | `20` | Tope de `GET /runs` |
+| `API_CORS_ORIGINS` | `http://localhost:5173` | Orígenes permitidos por CORS (separados por coma); solo importa para `npm run dev` sin el proxy de Vite |
 
 ---
 
@@ -273,11 +306,12 @@ src/
   Common/        Plumbing de Temporal: WorkerHost, ScheduleBootstrapper, store de estado.
   PatchMonitor/  Worker: MonitorWorkflow, PatchStateWorkflow, PatchRegistryWorkflow, activities.
   MonitorApi/    API mínima de ASP.NET Core.
+web/             Dashboard (React + Vite + TypeScript, spec 11): api/, components/, routes/.
 test/PatchMonitor.Tests/   xUnit + entorno time-skipping de Temporalio (sin Docker).
-docker/          docker-compose.yml, overlay e2e y Dockerfiles.
+docker/          docker-compose.yml, overlay e2e, Dockerfiles y nginx.conf del dashboard.
 scripts/e2e/     seed-orders.ps1, drain-orders.ps1, snapshot.ps1 (validación contra ReleaseOrderDemo).
 docs/e2e/        Guía de fases aplicada y evidencia JSON del recorrido end-to-end.
-specs/           Specs 01-09 (Spec-Driven Design).
+specs/           Specs 01-11 (Spec-Driven Design).
 Construction.md  Hoja de ruta, decisiones cerradas y criterio de "listo".
 ```
 
@@ -285,7 +319,7 @@ Construction.md  Hoja de ruta, decisiones cerradas y criterio de "listo".
 
 ```powershell
 dotnet build PatchMonitor.sln
-dotnet test  PatchMonitor.sln     # 263 tests, sin Docker
+dotnet test  PatchMonitor.sln     # 268 tests, sin Docker
 ```
 
 La primera corrida de tests descarga el test-server de Temporal (una vez; queda cacheado).

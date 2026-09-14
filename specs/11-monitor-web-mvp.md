@@ -1,6 +1,6 @@
 # 11 - Front de observabilidad
 
-**Estado:** Aprobado
+**Estado:** Implementado
 **Depende de:** [09-multi-target-e2e-validation.md](09-multi-target-e2e-validation.md)
 **Fecha:** 2026-09-14
 
@@ -345,29 +345,73 @@ Sin base de datos ni esquema nuevo: todo el estado sigue viviendo en los entity 
     `http://localhost:5101`, disparar el Schedule, pausar/reanudar, entrar al detalle de un patch y
     contrastar su timeline contra `docs/e2e/evidence/20260911160916-05-phase3-clean.json`.
 
+    **Resultado (2026-09-14):**
+
+    Se encontró y corrigió un bug real durante esta verificación: con `patch-monitor-worker`
+    detenido y al menos un patch real descubierto, `GET /patches` no fallaba — **colgaba 30+
+    segundos** (una Query de Temporal a un entity workflow no tiene quién la responda sin worker
+    activo) y el Dashboard quedaba en "Cargando patches…" indefinidamente, sin cumplir el criterio
+    de abajo. Se agregó un timeout de 20 s en `web/src/api/client.ts` (`AbortSignal.timeout`,
+    mapeado a `ApiError(408, ...)`, excluido del retry automático de TanStack Query) para que se
+    convierta en un error legible. Aparte de eso: `TemporalMonitorRunReader` (paso 3) usaba
+    `ORDER BY StartTime DESC` en la query de `ListWorkflowsAsync`, rechazado por la visibility
+    "standard" del stack (`"order by not allowed for standard visibility"`) — corregido ordenando en
+    memoria con un tope defensivo de 500, visto contra el stack real, no en tests unitarios.
+
+    Reproducción completa de las tres fases contra `ReleaseOrderDemo` real (patch
+    `audit-before-decision`, namespace `default`, workflowType `ReleaseOrderWorkflow`), aplicando a
+    mano los tres diffs de `docs/e2e/releaseorder-patch-phases.md` con su rebuild/redeploy entre
+    cada uno:
+
+    | Acción | `Phase` | Gate (`Outcome`) | `NextPhase` |
+    | --- | --- | --- | --- |
+    | Baseline (código limpio actual) | _(no descubierto)_ | — | — |
+    | Deploy fase 1 + seed pre/post-deploy | Coexistence (1) | Blocked (1) | Deprecated (2) |
+    | Drenar las bloqueantes | Coexistence (1) | Ready (2) | Deprecated (2) |
+    | Deploy fase 2 + seed | Deprecated (2) | Blocked (1), 5 bloqueantes | Clean (3) |
+    | Drenar las 5 | Deprecated (2) | Ready (2) | Clean (3) |
+    | Deploy fase 3 + seed, pasado `PHASE_CLEAN_GRACE_MINUTES` | **Clean (3)** | _(fase final, sin gate)_ | — |
+
+    El estado final coincide en estructura y en los textos de `reason` con
+    `docs/e2e/evidence/20260911160916-05-phase3-clean.json` (`Source: Inferred`, `lastVerdict: null`,
+    `previousVerdict.reason: "no quedan ejecuciones abiertas con el marker del patch"`). Verificado
+    visualmente en el Dashboard real (`:5101`) con Chrome: tabla, `PhaseBadge`/`OutcomeBadge`,
+    `PhaseTrack`, veredictos, historial y `/runs` (una notificación por cada cambio real de
+    revisión, cero en corridas sin cambio) — sin errores de consola en ningún momento. `npm run dev`
+    (`:5173`) y nginx (`:5101`) mostraron el mismo contenido lado a lado. Con `patch-monitor-worker`
+    detenido (después del fix), la UI mostró el error legible en menos de 20 s. `ReleaseOrderDemo`
+    quedó restaurado a su código original (`git diff` vacío) al cerrar la validación.
+
+    `dotnet build` → 0 errores, 0 advertencias. `dotnet test` → **268/268 verdes con ambos stacks de
+    Docker apagados** (un fallo de `TemporalPatchStateStoreTests` bajo corrida paralela, el flaky ya
+    documentado en `CLAUDE.md`, pasó aislado). Contexto de build de `patch-monitor-worker`: 184 MB
+    transferidos, menos que los 248 MB de `web/node_modules` solo — confirma que `.dockerignore` lo
+    excluye.
+
 ## Criterios de aceptación
 
-- [ ] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias tras agregar
+- [x] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias tras agregar
       `IMonitorRunReader`/`TemporalMonitorRunReader`/`RunEndpoints`/`ApiOptions.MaxListRuns`.
-- [ ] `dotnet test PatchMonitor.sln` pasa con el stack de Docker apagado, incluidos los casos nuevos
-      de `ApiOptionsTests` para `API_MAX_LIST_RUNS`.
-- [ ] `curl http://localhost:5100/runs` devuelve `RunListResponse` con al menos una corrida tras un
+- [x] `dotnet test PatchMonitor.sln` pasa con el stack de Docker apagado, incluidos los casos nuevos
+      de `ApiOptionsTests` para `API_MAX_LIST_RUNS`. *(268/268, ver paso 10.)*
+- [x] `curl http://localhost:5100/runs` devuelve `RunListResponse` con al menos una corrida tras un
       `POST /schedule/trigger`, sin tocar ningún workflow existente.
-- [ ] `cd web && npm run build` compila sin errores de TypeScript (`tsc --noEmit` incluido en el
+- [x] `cd web && npm run build` compila sin errores de TypeScript (`tsc --noEmit` incluido en el
       build de Vite).
-- [ ] Con `docker compose up -d` (6 servicios sanos, incluido `monitor-web`), `http://localhost:5101`
+- [x] Con `docker compose up -d` (6 servicios sanos, incluido `monitor-web`), `http://localhost:5101`
       muestra el patch real del `ReleaseOrderDemo` (overlay `docker-compose.e2e.yml`) con su fase y
       gate correctos.
-- [ ] *Disparar ahora* dispara una corrida visible en `/runs`; *Pausar*/*Reanudar* cambian
+- [x] *Disparar ahora* dispara una corrida visible en `/runs`; *Pausar*/*Reanudar* cambian
       `scheduleStatus.paused` y la UI lo refleja sin recargar la página.
-- [ ] El detalle de un patch muestra una timeline consistente con
+- [x] El detalle de un patch muestra una timeline consistente con
       `docs/e2e/evidence/20260911160916-05-phase3-clean.json` al reproducir el mismo recorrido
-      (`seed-orders.ps1` → `drain-orders.ps1`).
-- [ ] Con `patch-monitor-worker` detenido, el Dashboard sigue cargando (salud "unreachable" o
-      patches en error legible), sin pantalla en blanco ni error sin manejar.
-- [ ] `npm run dev` en `:5173` contra el `monitor-api` del compose (proxy de Vite) muestra el mismo
+      (`seed-orders.ps1` → `drain-orders.ps1`). *(Ver tabla del paso 10.)*
+- [x] Con `patch-monitor-worker` detenido, el Dashboard sigue cargando (salud "unreachable" o
+      patches en error legible), sin pantalla en blanco ni error sin manejar. *(Requirió el fix de
+      timeout documentado en el paso 10.)*
+- [x] `npm run dev` en `:5173` contra el `monitor-api` del compose (proxy de Vite) muestra el mismo
       contenido que `http://localhost:5101` (nginx) — confirma que ambos caminos son intercambiables.
-- [ ] `node_modules/` y `web/dist/` no aparecen en `git status` tras un build local, ni infla el
+- [x] `node_modules/` y `web/dist/` no aparecen en `git status` tras un build local, ni infla el
       contexto de build de `docker compose build patch-monitor-worker`.
 
 ## Decisiones tomadas y descartadas

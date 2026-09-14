@@ -32,8 +32,21 @@ export class ScheduleUnavailableError extends ApiError {
   }
 }
 
+// Sin worker, una Query de Temporal a un entity workflow (GET /patches, GET /patches/...) no
+// tiene quién la responda y MonitorApi queda colgado ~decenas de segundos en vez de devolver un
+// error. Un timeout acá evita que el Dashboard se quede en "Cargando..." indefinidamente.
+const REQUEST_TIMEOUT_MS = 20_000;
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${BASE}${path}`, init);
+  let response: Response;
+  try {
+    response = await fetch(`${BASE}${path}`, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+  } catch (err) {
+    if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError")) {
+      throw new ApiError(408, "Tiempo de espera agotado.");
+    }
+    throw err;
+  }
 
   if (response.status === 503 && path.startsWith("/schedule")) {
     throw new ScheduleUnavailableError();

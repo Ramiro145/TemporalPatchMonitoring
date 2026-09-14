@@ -5,3 +5,8 @@ bin/
 .git/
 docker-compose.override.yml
 Dockerfile.*
+
+# web/ (spec 11) — crítico: Dockerfile.MonitorApi y Dockerfile.PatchMonitor usan context: ..
+# (la raíz del repo entero); sin esto node_modules se copiaría al contexto de build .NET.
+node_modules/
+web/dist/

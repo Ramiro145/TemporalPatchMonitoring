@@ -280,14 +280,14 @@ No hay un spec dedicado a tests. Cada spec lleva sus pruebas en `## Criterios de
 
 El proyecto se da por terminado cuando:
 
-> **Nota (2026-09-11):** el spec 10 quedó diferido, no abandonado — ver la nota en §7, ítem 10, y
-> [[spec10-deferred-validate-elsewhere-first]]. Los dos ítems que dependen de él (el primero y el
-> último de esta lista) quedan sin marcar por eso, no porque algo haya fallado. Los cinco de en
-> medio ya están verificados con evidencia real de los specs 01-09.
+> **Nota (2026-09-11, actualizada 2026-09-14):** el spec 10 quedó diferido, no abandonado — ver la
+> nota en §7, ítem 10, y [[spec10-deferred-validate-elsewhere-first]]. El único ítem que depende de
+> él queda sin marcar por eso, no porque algo haya fallado. Los otros seis ya están verificados con
+> evidencia real de los specs 01-09 y 11.
 
-- [ ] Los specs 01-09 y 11 están en estado `Implementado`. *(01-09 sí, verificado: todos dicen
+- [x] Los specs 01-09 y 11 están en estado `Implementado`. *(01-09 y 11, verificado: todos dicen
       `Implementado`/`Implementada`. El 10 está diferido — ver nota arriba — y ni siquiera tiene
-      archivo de spec todavía, por eso no cuenta en este ítem. El 11 arranca en `Borrador`.)*
+      archivo de spec todavía, por eso no cuenta en este ítem.)*
 - [x] `docker compose up` levanta Temporal + UI + `PatchMonitor` + `MonitorApi` sin SQL Server.
       *(Confirmado repetidas veces durante el spec 09: los 5 servicios de `docker-compose.yml`
       quedan sanos — `temporal`, `temporal-db` (Postgres), `temporal-ui`, `patch-monitor-worker`,
@@ -315,6 +315,7 @@ El proyecto se da por terminado cuando:
 - [ ] El `MonitorWorkflow` no tiene ningún `Workflow.Patched` ni `Workflow.DeprecatePatch` residual
       tras el spec 10, y el drenaje bajo `docker compose stop` respeta los 30 s. *(Bloqueado por el
       spec 10 diferido — no aplica todavía.)*
-- [ ] Un dashboard web (spec 11) muestra el estado de todos los patches, su historial de fases y
-      permite disparar el Schedule y pausarlo/reanudarlo, sin pasar por Swagger. *(Pendiente: spec 11
-      en `Borrador`.)*
+- [x] Un dashboard web (spec 11) muestra el estado de todos los patches, su historial de fases y
+      permite disparar el Schedule y pausarlo/reanudarlo, sin pasar por Swagger. *(Implementado y
+      verificado el 2026-09-14 contra el mismo recorrido de tres fases de `ReleaseOrderDemo`; ver
+      `specs/11-monitor-web-mvp.md`, paso 10 del plan de implementación.)*

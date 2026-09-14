@@ -30,8 +30,9 @@ cambios de arquitectura.
 
 ## Estado actual
 
-- Specs **01 a 09 implementados** (`specs/`). El spec 09 validó el monitor end-to-end contra el
-  `ReleaseOrderDemo` real (evidencia en `docs/e2e/evidence/`).
+- Specs **01 a 09 y 11 implementados** (`specs/`). El spec 09 validó el monitor end-to-end contra
+  el `ReleaseOrderDemo` real (evidencia en `docs/e2e/evidence/`). El spec 11 agregó el dashboard
+  web (`web/`, ver `## Frontend` más abajo).
 - **Spec 10 (auto-versionado del `MonitorWorkflow`) diferido**, no descartado: la prioridad es
   probar el monitor contra un segundo proyecto real. Ver `Construction.md` §7 ítem 10 y §8.
 - Límites conocidos para reusarlo en otros proyectos: `specs/09-multi-target-e2e-validation.md`,
@@ -47,6 +48,7 @@ Solución `PatchMonitor.sln`, todos los proyectos `net8.0`, `Temporalio` 1.9.0:
 | `src/Common` | Plumbing de Temporal portado del repo de referencia: `WorkerHost` (drenaje SIGTERM, 30 s), `WorkflowStarter`, `WorkflowValidator`, `ScheduleBootstrapper`, `ScheduleController`, `TemporalPatchStateStore`. |
 | `src/PatchMonitor` | Worker. Workflows: `MonitorWorkflow` (pasada efímera por tick), `PatchStateWorkflow` (entity por patch, nunca cierra, `Continue-As-New`), `PatchRegistryWorkflow` (índice singleton), `HealthWorkflow`. Activities respaldadas por `Services/*`. Crea el Schedule al arrancar. |
 | `src/MonitorApi` | API mínima de ASP.NET Core en `:5100`, Swagger siempre habilitado. |
+| `web` | Dashboard de observabilidad (spec 11): React 19 + Vite + TypeScript, consume `MonitorApi` por `/api`. Sirve en `:5173` (dev, proxy de Vite) o `:5101` (nginx, Docker). |
 | `test/PatchMonitor.Tests` | xUnit + entorno time-skipping de Temporalio. Sin Docker. |
 
 Flujo de un tick: Schedule → `MonitorWorkflow` → `DiscoveryActivities` (dos niveles:
@@ -78,7 +80,7 @@ Dos clusters, nunca mezclar:
 
 ```powershell
 dotnet build PatchMonitor.sln
-dotnet test  PatchMonitor.sln        # 263 tests, sin Docker
+dotnet test  PatchMonitor.sln        # 268 tests, sin Docker
 
 # stack del monitor, desde docker/
 docker compose build
@@ -89,13 +91,34 @@ docker compose logs --tail=100 patch-monitor-worker
 docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d
 ```
 
-Puertos del host: Temporal `7234`, UI `8234`, Postgres `5433`, API `5100` (corridos para convivir
-con un proyecto en 7233/8233/5432). `EnsureScheduleAsync` es create-if-absent: si cambiás la
-configuración del Schedule, hacé `docker compose down -v` para que se recree.
+Puertos del host: Temporal `7234`, UI `8234`, Postgres `5433`, API `5100`, dashboard `5101`
+(corridos para convivir con un proyecto en 7233/8233/5432). `EnsureScheduleAsync` es
+create-if-absent: si cambiás la configuración del Schedule, hacé `docker compose down -v` para que
+se recree.
 
 Los tests de time-skipping descargan el test-server de Temporal la primera vez (queda cacheado).
 Hay un flaky conocido en `TemporalPatchStateStoreTests` bajo carga paralela; si falla, repetir
 aislado antes de investigar.
+
+## Frontend (`web/`)
+
+Vite + React 19 + TypeScript + TanStack Query + React Router + Tailwind v4 + shadcn/ui (base
+Radix, componentes copiados en `web/src/components/ui/`, no versionados como dependencia).
+
+```powershell
+cd web
+npm install
+npm run dev     # :5173, con el proxy /api -> :5100 de vite.config.ts
+npm run build   # tsc --noEmit + build de producción; es la única verificación automática del front
+```
+
+- `web/src/api/enums.ts` es el único lugar donde los enums numéricos de `Contracts` (`PatchPhase`,
+  `GateOutcome`, `PhaseSource`) se mapean a texto. Ningún componente compara contra `0`/`1`/`2`/`3`
+  fuera de ese archivo.
+- `web/src/api/types.ts` es el espejo manual de los DTOs de `Contracts/Api` y `Contracts/Monitor`;
+  si cambia un record ahí, actualizarlo a mano (no hay generación automática de tipos).
+- Sin suite de tests de frontend (Vitest/Playwright): la verificación es `npm run build` más el
+  recorrido manual contra el stack real.
 
 ## Proyecto de referencia
 

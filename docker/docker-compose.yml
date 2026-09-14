@@ -122,5 +122,14 @@ services:
       temporal:
         condition: service_healthy
 
+  monitor-web:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.MonitorWeb
+    ports:
+      - "5101:80"
+    depends_on:
+      - monitor-api
+
 volumes:
   temporal_data:
