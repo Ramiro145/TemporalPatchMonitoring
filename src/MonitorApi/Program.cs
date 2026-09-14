@@ -27,9 +27,18 @@ builder.Services.AddMonitorApiServices();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// CORS mínimo para el dashboard (spec 11). Ausente o vacía ⇒ default, nunca lanza (convención de
+// CLAUDE.md). El camino recomendado (proxy de Vite en dev, nginx en prod) nunca depende de esto;
+// solo importa para quien corra `npm run dev` hablando directo con :5100, y como red de seguridad.
+var corsOrigins = (Environment.GetEnvironmentVariable("API_CORS_ORIGINS") ?? "http://localhost:5173")
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+builder.Services.AddCors(o => o.AddDefaultPolicy(p => p.WithOrigins(corsOrigins).AllowAnyHeader().AllowAnyMethod()));
+
 builder.WebHost.UseUrls("http://0.0.0.0:5100");
 
 var app = builder.Build();
+
+app.UseCors();
 
 // Swagger habilitado siempre (no solo en Development).
 app.UseSwagger();
