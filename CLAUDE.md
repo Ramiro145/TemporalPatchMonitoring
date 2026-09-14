@@ -97,8 +97,9 @@ create-if-absent: si cambiás la configuración del Schedule, hacé `docker comp
 se recree.
 
 Los tests de time-skipping descargan el test-server de Temporal la primera vez (queda cacheado).
-Hay un flaky conocido en `TemporalPatchStateStoreTests` bajo carga paralela; si falla, repetir
-aislado antes de investigar.
+Hay flakies conocidos bajo carga paralela del entorno de time-skipping — vistos en
+`TemporalPatchStateStoreTests` y en `PatchStateWorkflowTests` — que pasan aislados sin cambios; si
+falla alguno, repetir aislado antes de investigar.
 
 ## Frontend (`web/`)
 
