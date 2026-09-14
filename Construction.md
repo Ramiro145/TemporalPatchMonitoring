@@ -63,7 +63,7 @@ Estas decisiones **no se re-discuten** en los specs; se citan.
 | Descubrimiento de patches | Dos niveles: query sobre el search attribute `TemporalChangeVersion`, con **fallback** a escaneo de Event History | La standard visibility sobre Postgres (stack del repo de referencia) falla en queries compuestas de `KeywordList` |
 | Persistencia del estado del monitor | **Entity Workflows en Temporal**, sin BD propia; puerto `IDecisionSink` para un sink SQL futuro | Cero infraestructura extra ⇒ barrera de adopción mínima; un entity workflow abierto nunca lo purga la retención; Temporal ya es un store durable con la semántica exacta |
 | Auditoría histórica de largo plazo | Fuera de alcance del núcleo; se cubre a futuro con un adaptador `IDecisionSink` aditivo | `Continue-As-New` trunca la Event History; si hace falta consultar "hace 8 meses", va a un sink dedicado, sin reescribir el núcleo |
-| Entregables extra | API mínima de control + notificador pluggable | Sin frontend, sin spec dedicado de tests (cada spec lleva los suyos) |
+| Entregables extra | API mínima de control + notificador pluggable + **frontend de observabilidad** (spec 11, decisión reabierta el 2026-09-14) | Sin spec dedicado de tests (cada spec lleva los suyos). El "sin frontend" original asumía que Swagger alcanzaba como interfaz; el spec 09 cerró el objetivo central del README y dejó la observabilidad —no la capacidad— como el cuello de botella real para reusar el monitor en otros proyectos, de ahí el spec 11 |
 | Stack | `.NET 8`, `Temporalio` 1.9.0, `temporalio/auto-setup:1.23.0`, `temporalio/ui:2.23.0`, Postgres 15, Docker Compose. **Sin SQL Server.** | Igualar el repo de referencia; SQL Server sale porque no hay BD propia |
 
 ---
@@ -176,6 +176,7 @@ Derivada de las 6 specs de `ReleaseOrderDemo`. Cada `/spec` que se cree debe res
 | 08 | `control-api` | Superficie HTTP única: listar, consultar, chequear on-demand, pausar/reanudar, override manual de fase | 07 |
 | 09 | `multi-target-e2e-validation` | Apuntar el monitor al `ReleaseOrderDemo` real y reproducir el recorrido de fases del artifact | 08 |
 | 10 | `self-versioning-and-drain` | Aplicar el ciclo `Patched → DeprecatePatch → limpio` al propio `MonitorWorkflow` — **diferido, ver nota abajo** | 09 |
+| 11 | `monitor-web-mvp` | Dashboard React que consume `MonitorApi` para observar patches y controlar el Schedule sin Swagger | 09 |
 
 ### Por qué van en ese orden
 
@@ -252,6 +253,14 @@ gate 1→2 solo se habilita gracias al `Continue-As-New` que introdujo el 05. En
 > en esa próxima prueba. Este spec 10 queda documentado y listo para retomarse — no se descarta, solo
 > se re-prioriza detrás de esa validación.
 
+**11 — Front de observabilidad.**
+Depende de 09, no de 10: no necesita que el monitor se versione a sí mismo, necesita que el objetivo
+central ya esté demostrado contra un proyecto ajeno (lo que 09 hizo). Numerado 11 y no 10 para no
+tocar la reserva ya hecha de `self-versioning-and-drain`, que sigue diferido pero no descartado.
+Entrega un dashboard React (Vite, `web/` en este mismo repo) que consume `MonitorApi` sin agregar
+ningún camino de escritura que el spec 08 no tuviera ya, salvo CORS y un `GET /runs` de solo lectura
+para exponer los `MonitorRunSummary` que hoy solo viven en la Event History.
+
 ### Testing
 
 No hay un spec dedicado a tests. Cada spec lleva sus pruebas en `## Criterios de aceptación`:
@@ -261,6 +270,9 @@ No hay un spec dedicado a tests. Cada spec lleva sus pruebas en `## Criterios de
 - Specs **05 en adelante**: entorno de **time-skipping de `Temporalio`**, igual que
   `test/ReleaseOrder.Tests` del repo de referencia. El binario del test-server se descarga una vez y
   queda cacheado.
+- Spec **11** es la excepción: es frontend, no dominio de Temporal. Su verificación es
+  `npm run build` (con `tsc --noEmit`) más un recorrido end-to-end manual contra el stack real, sin
+  suite de tests de UI — igual que el paso 10 de verificación manual del spec 09.
 
 ---
 
@@ -273,9 +285,9 @@ El proyecto se da por terminado cuando:
 > último de esta lista) quedan sin marcar por eso, no porque algo haya fallado. Los cinco de en
 > medio ya están verificados con evidencia real de los specs 01-09.
 
-- [ ] Los 10 specs están en estado `Implementado`. *(01-09 sí, verificado: todos dicen
+- [ ] Los specs 01-09 y 11 están en estado `Implementado`. *(01-09 sí, verificado: todos dicen
       `Implementado`/`Implementada`. El 10 está diferido — ver nota arriba — y ni siquiera tiene
-      archivo de spec todavía.)*
+      archivo de spec todavía, por eso no cuenta en este ítem. El 11 arranca en `Borrador`.)*
 - [x] `docker compose up` levanta Temporal + UI + `PatchMonitor` + `MonitorApi` sin SQL Server.
       *(Confirmado repetidas veces durante el spec 09: los 5 servicios de `docker-compose.yml`
       quedan sanos — `temporal`, `temporal-db` (Postgres), `temporal-ui`, `patch-monitor-worker`,
@@ -303,3 +315,6 @@ El proyecto se da por terminado cuando:
 - [ ] El `MonitorWorkflow` no tiene ningún `Workflow.Patched` ni `Workflow.DeprecatePatch` residual
       tras el spec 10, y el drenaje bajo `docker compose stop` respeta los 30 s. *(Bloqueado por el
       spec 10 diferido — no aplica todavía.)*
+- [ ] Un dashboard web (spec 11) muestra el estado de todos los patches, su historial de fases y
+      permite disparar el Schedule y pausarlo/reanudarlo, sin pasar por Swagger. *(Pendiente: spec 11
+      en `Borrador`.)*
