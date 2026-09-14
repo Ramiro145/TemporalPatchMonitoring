@@ -29,6 +29,7 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<IPatchStateStore, TemporalPatchStateStore>();
         services.AddSingleton<IScheduleController, TemporalScheduleController>();
+        services.AddSingleton<IMonitorRunReader, TemporalMonitorRunReader>();
 
         return services;
     }

@@ -94,4 +94,7 @@ app.MapPost("/schedule/unpause", ScheduleEndpoints.UnpauseAsync)
 app.MapPost("/schedule/trigger", ScheduleEndpoints.TriggerAsync)
     .WithName("TriggerSchedule").WithTags("Schedule");
 
+app.MapGet("/runs", RunEndpoints.ListAsync)
+    .WithName("ListRuns").WithTags("Runs");
+
 app.Run();

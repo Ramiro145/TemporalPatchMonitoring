@@ -9,7 +9,7 @@ namespace Contracts.Api;
 /// <see cref="Monitor.MonitorOptions"/>, <see cref="State.StateOptions"/> y
 /// <see cref="Notification.NotificationOptions"/>.
 /// </summary>
-public sealed record ApiOptions(int MaxListPatches, TimeSpan OverrideDefaultTtl)
+public sealed record ApiOptions(int MaxListPatches, TimeSpan OverrideDefaultTtl, int MaxListRuns)
 {
     /// <summary>Tope por defecto de patches enriquecidos cuando <c>API_MAX_LIST_PATCHES</c> no está.</summary>
     public const int DefaultMaxListPatches = 100;
@@ -17,15 +17,20 @@ public sealed record ApiOptions(int MaxListPatches, TimeSpan OverrideDefaultTtl)
     /// <summary>Horas por defecto de vencimiento cuando <c>API_OVERRIDE_DEFAULT_TTL_HOURS</c> no está.</summary>
     public const int DefaultOverrideTtlHours = 24;
 
+    /// <summary>Tope por defecto de corridas devueltas cuando <c>API_MAX_LIST_RUNS</c> no está.</summary>
+    public const int DefaultMaxListRuns = 20;
+
     /// <summary>
-    /// Lee <c>API_MAX_LIST_PATCHES</c> y <c>API_OVERRIDE_DEFAULT_TTL_HOURS</c>. Cualquiera que
-    /// falte, no parsee como entero o no sea positiva usa su default. Nunca lanza.
+    /// Lee <c>API_MAX_LIST_PATCHES</c>, <c>API_OVERRIDE_DEFAULT_TTL_HOURS</c> y
+    /// <c>API_MAX_LIST_RUNS</c>. Cualquiera que falte, no parsee como entero o no sea positiva
+    /// usa su default. Nunca lanza.
     /// </summary>
     public static ApiOptions FromEnvironment()
     {
         return new ApiOptions(
             PositiveIntOrDefault("API_MAX_LIST_PATCHES", DefaultMaxListPatches),
-            TimeSpan.FromHours(PositiveIntOrDefault("API_OVERRIDE_DEFAULT_TTL_HOURS", DefaultOverrideTtlHours)));
+            TimeSpan.FromHours(PositiveIntOrDefault("API_OVERRIDE_DEFAULT_TTL_HOURS", DefaultOverrideTtlHours)),
+            PositiveIntOrDefault("API_MAX_LIST_RUNS", DefaultMaxListRuns));
     }
 
     private static int PositiveIntOrDefault(string variable, int fallback)
