@@ -11,6 +11,13 @@ namespace Common.Temporal
     /// </summary>
     public sealed class TemporalMonitorRunReader : IMonitorRunReader
     {
+        // La visibility "standard" (Postgres/SQLite sin ElasticSearch, la que trae el
+        // docker-compose de este repo) rechaza `ORDER BY` en la query de List con
+        // "order by not allowed for standard visibility" (verificado contra el stack real en el
+        // spec 11). Se ordena en memoria en su lugar, acotando el escaneo con el mismo criterio
+        // que DiscoveryOptions.MaxExecutions (tope defensivo, nunca ilimitado).
+        private const int MaxScanned = 500;
+
         private readonly Lazy<Task<ITemporalClient>> _client;
 
         public TemporalMonitorRunReader(Lazy<Task<ITemporalClient>> client)
@@ -21,17 +28,22 @@ namespace Common.Temporal
         public async Task<IReadOnlyList<MonitorRunView>> ListRecentAsync(int limit, CancellationToken ct = default)
         {
             var client = await _client.Value.ConfigureAwait(false);
-            var views = new List<MonitorRunView>(limit);
+            var scanned = new List<WorkflowExecution>(Math.Min(limit, MaxScanned));
 
             await foreach (var execution in client
-                .ListWorkflowsAsync("WorkflowType = 'MonitorWorkflow' ORDER BY StartTime DESC")
+                .ListWorkflowsAsync("WorkflowType = 'MonitorWorkflow'")
                 .WithCancellation(ct))
             {
-                if (views.Count >= limit)
+                scanned.Add(execution);
+                if (scanned.Count >= MaxScanned)
                 {
                     break;
                 }
+            }
 
+            var views = new List<MonitorRunView>(limit);
+            foreach (var execution in scanned.OrderByDescending(e => e.StartTime).Take(limit))
+            {
                 views.Add(new MonitorRunView(
                     execution.Id,
                     execution.RunId,
