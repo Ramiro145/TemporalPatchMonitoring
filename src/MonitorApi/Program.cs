@@ -66,6 +66,7 @@ app.MapGet("/health", async (TemporalClient client) =>
     return Results.Ok(new
     {
         temporal = reachable ? "ok" : "unreachable",
+        monitorNamespace = clusterOptions.Namespace,
         targetNamespace,
         taskQueue
     });

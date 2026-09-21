@@ -76,6 +76,13 @@ export function TopBar() {
           </span>
         </div>
 
+        {health.data && (
+          <span className="text-muted-foreground">
+            monitor: {health.data.monitorNamespace} · observado:{" "}
+            {health.data.targetNamespace}
+          </span>
+        )}
+
         {scheduleUnavailable && (
           <span className="text-muted-foreground">Schedule no disponible</span>
         )}

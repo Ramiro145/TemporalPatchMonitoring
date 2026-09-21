@@ -4,6 +4,7 @@
 
 export interface Health {
   temporal: "ok" | "unreachable";
+  monitorNamespace: string;
   targetNamespace: string;
   taskQueue: string;
 }
