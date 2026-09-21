@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using Contracts.Monitor;
 using Temporalio.Client;
 using System.Linq.Expressions;
 
@@ -15,8 +16,12 @@ namespace Common
             string workflowIdPrefix)
             where TWorkflow : class
         {
-            var temporalTarget = Environment.GetEnvironmentVariable("TEMPORAL_HOST") ?? "temporal:7233";
-            var client = await TemporalClient.ConnectAsync(new TemporalClientConnectOptions { TargetHost = temporalTarget });
+            var clusterOptions = MonitorClusterOptions.FromEnvironment();
+            var client = await TemporalClient.ConnectAsync(new TemporalClientConnectOptions
+            {
+                TargetHost = clusterOptions.Host,
+                Namespace = clusterOptions.Namespace
+            });
 
             var workflowId = $"{workflowIdPrefix}-{Guid.NewGuid()}";
 
@@ -37,8 +42,12 @@ namespace Common
             string workflowIdPrefix)
             where TWorkflow : class
         {
-            var temporalTarget = Environment.GetEnvironmentVariable("TEMPORAL_HOST") ?? "temporal:7233";
-            var client = await TemporalClient.ConnectAsync(new TemporalClientConnectOptions { TargetHost = temporalTarget });
+            var clusterOptions = MonitorClusterOptions.FromEnvironment();
+            var client = await TemporalClient.ConnectAsync(new TemporalClientConnectOptions
+            {
+                TargetHost = clusterOptions.Host,
+                Namespace = clusterOptions.Namespace
+            });
 
             var workflowId = $"{workflowIdPrefix}-{Guid.NewGuid()}";
 

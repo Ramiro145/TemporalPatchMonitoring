@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Contracts.Monitor;
 using Microsoft.Extensions.DependencyInjection;
 using Temporalio.Client;
 using Temporalio.Worker;
@@ -78,11 +79,12 @@ namespace Common
 
         private static async Task<TemporalClient> ConnectAsync()
         {
-            var temporalTarget = Environment.GetEnvironmentVariable("TEMPORAL_HOST") ?? "temporal:7233";
+            var clusterOptions = MonitorClusterOptions.FromEnvironment();
 
             return await TemporalClient.ConnectAsync(new TemporalClientConnectOptions
             {
-                TargetHost = temporalTarget
+                TargetHost = clusterOptions.Host,
+                Namespace = clusterOptions.Namespace
             });
         }
 
