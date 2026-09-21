@@ -293,18 +293,21 @@ No hay un spec dedicado a tests. Cada spec lleva sus pruebas en `## Criterios de
 
 El proyecto se da por terminado cuando:
 
-> **Nota (2026-09-11, actualizada 2026-09-14):** el spec 10 quedó diferido, no abandonado — ver la
+> **Nota (2026-09-11, actualizada 2026-09-21):** el spec 10 quedó diferido, no abandonado — ver la
 > nota en §7, ítem 10, y [[spec10-deferred-validate-elsewhere-first]]. El único ítem que depende de
 > él queda sin marcar por eso, no porque algo haya fallado. Los otros seis ya están verificados con
-> evidencia real de los specs 01-09 y 11.
+> evidencia real de los specs 01-09, 11 y 12.
 
-- [x] Los specs 01-09 y 11 están en estado `Implementado`. *(01-09 y 11, verificado: todos dicen
-      `Implementado`/`Implementada`. El 10 está diferido — ver nota arriba — y ni siquiera tiene
-      archivo de spec todavía, por eso no cuenta en este ítem.)*
-- [x] `docker compose up` levanta Temporal + UI + `PatchMonitor` + `MonitorApi` sin SQL Server.
-      *(Confirmado repetidas veces durante el spec 09: los 5 servicios de `docker-compose.yml`
-      quedan sanos — `temporal`, `temporal-db` (Postgres), `temporal-ui`, `patch-monitor-worker`,
-      `monitor-api` — sin ningún servicio de SQL Server.)*
+- [x] Los specs 01-09, 11 y 12 están en estado `Implementado`. *(01-09, 11 y 12, verificado: todos
+      dicen `Implementado`/`Implementada`. El 10 está diferido — ver nota arriba — y ni siquiera
+      tiene archivo de spec todavía, por eso no cuenta en este ítem.)*
+- [x] `docker compose up` levanta `PatchMonitor` + `MonitorApi` sin SQL Server, apoyado en un
+      cluster de Temporal existente. *(Hasta el spec 11: confirmado con `temporal`, `temporal-db`
+      (Postgres), `temporal-ui`, `patch-monitor-worker`, `monitor-api` propios, sin SQL Server. El
+      spec 12 movió el default a apoyarse en un cluster existente — `patch-monitor-worker` +
+      `monitor-api` + `monitor-web`, sin Temporal/Postgres/UI propios salvo con
+      `--profile standalone` — verificado end-to-end contra `ReleaseOrderDemo` real: namespace
+      `monitor` aislado del `default` observado, sin SQL Server en ningún caso.)*
 - [x] El monitor, apuntado a un namespace arbitrario, lista sus patches y la fase de cada uno sin
       configuración específica de ese proyecto. *(Spec 09: apuntado al namespace `default` de
       `ReleaseOrderDemo`, un repo ajeno, solo con `TARGET_TEMPORAL_HOST`/`TARGET_TEMPORAL_NAMESPACE`

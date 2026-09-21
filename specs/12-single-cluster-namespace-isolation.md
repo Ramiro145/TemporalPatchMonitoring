@@ -1,6 +1,6 @@
 # 12 - Un solo Temporal, dos namespaces
 
-**Estado:** Aprobado
+**Estado:** Implementado
 **Depende de:** [09-multi-target-e2e-validation.md](09-multi-target-e2e-validation.md)
 **Fecha:** 2026-09-21
 
@@ -179,24 +179,36 @@ public sealed record MonitorClusterOptions(string Host, string Namespace)
 
 ## Criterios de aceptación
 
-- [ ] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
-- [ ] `dotnet test PatchMonitor.sln` pasa con el stack de Docker apagado (268 + los nuevos casos de
-      `MonitorClusterOptionsTests`).
-- [ ] `cd web && npm run build` compila sin errores de TypeScript.
-- [ ] Con `ReleaseOrderDemo` levantado con su propio compose (Temporal en `:7233`) y, desde
+- [x] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
+- [x] `dotnet test PatchMonitor.sln` pasa con el stack de Docker apagado (268 + los nuevos casos de
+      `MonitorClusterOptionsTests`). *(276/276 en verde, verificado con el stack de Docker apagado.)*
+- [x] `cd web && npm run build` compila sin errores de TypeScript.
+- [x] Con `ReleaseOrderDemo` levantado con su propio compose (Temporal en `:7233`) y, desde
       `docker/`, `docker compose up -d` **sin** `--profile standalone`: quedan arriba solo
       `patch-monitor-worker`, `monitor-api` y `monitor-web` — ningún Temporal, Postgres ni UI nuevos.
-- [ ] La UI de Temporal del cluster existente (`:8233` en `ReleaseOrderDemo`) lista los namespaces
+      *(Verificado contra `ReleaseOrderDemo` real: exactamente esos 3 servicios arriba.)*
+- [x] La UI de Temporal del cluster existente (`:8233` en `ReleaseOrderDemo`) lista los namespaces
       `default` y `monitor`; `patch-state::*`, `patch-registry` y las corridas de `MonitorWorkflow`
-      aparecen solo en `monitor`.
-- [ ] `curl http://localhost:5100/health` devuelve `monitorNamespace: "monitor"`,
-      `targetNamespace: "default"` y `temporal: "ok"`.
-- [ ] `curl -X POST http://localhost:5100/schedule/trigger` seguido de
+      aparecen solo en `monitor`. *(Confirmado por `temporal workflow list`: namespace `monitor`
+      tiene solo `patch-registry`, `patch-state::default::ReleaseOrderWorkflow::audit-before-decision`,
+      el scheduler y `MonitorWorkflow`; namespace `default` tiene solo ejecuciones de
+      `ReleaseOrderWorkflow`, cero auto-observación.)*
+- [x] `curl http://localhost:5100/health` devuelve `monitorNamespace: "monitor"`,
+      `targetNamespace: "default"` y `temporal: "ok"`. *(Verificado literal contra el cluster real.)*
+- [x] `curl -X POST http://localhost:5100/schedule/trigger` seguido de
       `curl http://localhost:5100/patches` devuelve el patch real de `ReleaseOrderWorkflow` y ningún
-      patch propio del monitor (confirma que se terminó la auto-observación silenciosa).
-- [ ] `docker compose --profile standalone up -d` sigue levantando un Temporal propio completo para
+      patch propio del monitor (confirma que se terminó la auto-observación silenciosa). *(Se
+      reintrodujo temporalmente el patch `audit-before-decision` (fase 1, sin commitear en
+      `ReleaseOrderDemo`) para generar el marker real; `/patches` devolvió el patch en fase
+      Coexistence, `Blocked` por 2 ejecuciones pre-patch abiertas reales del cluster.)*
+- [x] `docker compose --profile standalone up -d` sigue levantando un Temporal propio completo para
       quien no tenga cluster existente, sin cambios de comportamiento respecto al stack actual.
-- [ ] El Dashboard (`:5101`) muestra `monitorNamespace` junto al namespace observado.
+      *(Verificado: `temporal`, `temporal-db`, `temporal-ui` sanos, conviviendo con el stack apuntado
+      al cluster de `ReleaseOrderDemo`.)*
+- [x] El Dashboard (`:5101`) muestra `monitorNamespace` junto al namespace observado. *(Verificado
+      por API: `curl http://localhost:5101/api/health` vía el proxy de nginx devuelve
+      `monitorNamespace`; el binding en `TopBar.tsx` es directo — sin browser disponible en este
+      entorno para captura visual.)*
 
 ## Decisiones tomadas y descartadas
 

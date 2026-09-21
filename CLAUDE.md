@@ -30,9 +30,11 @@ cambios de arquitectura.
 
 ## Estado actual
 
-- Specs **01 a 09 y 11 implementados** (`specs/`). El spec 09 validó el monitor end-to-end contra
-  el `ReleaseOrderDemo` real (evidencia en `docs/e2e/evidence/`). El spec 11 agregó el dashboard
-  web (`web/`, ver `## Frontend` más abajo).
+- Specs **01 a 09, 11 y 12 implementados** (`specs/`). El spec 09 validó el monitor end-to-end
+  contra el `ReleaseOrderDemo` real (evidencia en `docs/e2e/evidence/`). El spec 11 agregó el
+  dashboard web (`web/`, ver `## Frontend` más abajo). El spec 12 movió el monitor a apoyarse en un
+  cluster de Temporal existente, aislado por namespace (`monitor` propio / `default` observado) en
+  vez de levantar su propio cluster.
 - **Spec 10 (auto-versionado del `MonitorWorkflow`) diferido**, no descartado: la prioridad es
   probar el monitor contra un segundo proyecto real. Ver `Construction.md` §7 ítem 10 y §8.
 - Límites conocidos para reusarlo en otros proyectos: `specs/09-multi-target-e2e-validation.md`,

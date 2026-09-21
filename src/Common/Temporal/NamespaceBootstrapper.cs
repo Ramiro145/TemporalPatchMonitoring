@@ -18,9 +18,12 @@ namespace Common
         /// <summary>Retención por defecto, en días, cuando <c>MONITOR_NAMESPACE_RETENTION_DAYS</c> no está.</summary>
         public const int DefaultRetentionDays = 7;
 
-        // El cache del frontend de Temporal tarda unos segundos en propagar un namespace recién
-        // registrado a DescribeNamespace/ListNamespaces; reintentamos hasta este tope antes de
-        // dejar que el llamador siga (worker/API arrancan igual, la conexión reintenta sola).
+        // DescribeNamespace confirma el namespace nuevo casi al instante, pero el registro que
+        // usan matching/history para servicios que sí lo ejercitan (CreateSchedule, arrancar un
+        // Workflow) se refresca en un ciclo propio y más lento: confiar solo en DescribeNamespace
+        // deja una ventana real donde el namespace "existe" pero un CreateSchedule inmediato
+        // después falla con NotFound (visto en la verificación e2e del spec 12). Por eso, tras
+        // registrar, esperamos la ventana completa en vez de salir apenas DescribeNamespace lo ve.
         private static readonly TimeSpan PropagationRetryWindow = TimeSpan.FromSeconds(15);
         private static readonly TimeSpan PropagationRetryDelay = TimeSpan.FromSeconds(1);
 
@@ -72,14 +75,20 @@ namespace Common
 
         private static async Task WaitForPropagationAsync(ITemporalClient client, string @namespace)
         {
+            // Espera a que DescribeNamespace confirme el namespace (paso rápido) y después agota
+            // el resto de la ventana igual, para darle tiempo al registro de matching/history.
             var deadline = DateTime.UtcNow + PropagationRetryWindow;
             while (DateTime.UtcNow < deadline)
             {
                 if (await NamespaceExistsAsync(client, @namespace).ConfigureAwait(false))
-                    return;
+                    break;
 
                 await Task.Delay(PropagationRetryDelay).ConfigureAwait(false);
             }
+
+            var remaining = deadline - DateTime.UtcNow;
+            if (remaining > TimeSpan.Zero)
+                await Task.Delay(remaining).ConfigureAwait(false);
         }
 
         private static int PositiveIntOrDefault(string variable, int fallback)
