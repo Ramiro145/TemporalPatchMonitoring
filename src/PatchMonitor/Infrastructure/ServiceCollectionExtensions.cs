@@ -41,16 +41,24 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IPhaseResolver, PhaseResolver>();
         services.AddSingleton<PhaseActivities>();
 
+        // Cluster y namespace propios del monitor (spec 12): TEMPORAL_HOST/TEMPORAL_NAMESPACE,
+        // distintos del namespace observado que describe DiscoveryOptions.
+        services.AddSingleton(_ => MonitorClusterOptions.FromEnvironment());
+
         // Estado durable en entity workflows (spec 05). StateOptions desde el entorno; el
-        // TemporalClient propio del monitor (TEMPORAL_HOST, no el namespace observado) como
-        // Lazy<Task<...>> con la misma forma que TemporalExecutionSource. El sink es no-op por
-        // default; un adaptador real (SQL u otro) es trabajo futuro.
+        // TemporalClient propio del monitor (MonitorClusterOptions, no el namespace observado)
+        // como Lazy<Task<...>> con la misma forma que TemporalExecutionSource. El sink es no-op
+        // por default; un adaptador real (SQL u otro) es trabajo futuro.
         services.AddSingleton(_ => StateOptions.FromEnvironment());
-        services.AddSingleton(_ => new Lazy<Task<ITemporalClient>>(async () =>
-            (ITemporalClient)await TemporalClient.ConnectAsync(new TemporalClientConnectOptions
+        services.AddSingleton(sp => new Lazy<Task<ITemporalClient>>(async () =>
+        {
+            var clusterOptions = sp.GetRequiredService<MonitorClusterOptions>();
+            return (ITemporalClient)await TemporalClient.ConnectAsync(new TemporalClientConnectOptions
             {
-                TargetHost = Environment.GetEnvironmentVariable("TEMPORAL_HOST") ?? "temporal:7233",
-            })));
+                TargetHost = clusterOptions.Host,
+                Namespace = clusterOptions.Namespace,
+            });
+        }));
         services.AddSingleton<IDecisionSink, NoopDecisionSink>();
         services.AddSingleton<IPatchStateStore, TemporalPatchStateStore>();
         services.AddSingleton<PatchStateActivities>();

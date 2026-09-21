@@ -18,7 +18,12 @@ var provider = services.BuildServiceProvider();
 // one-shot: un Schedule sin worker escuchando solo acumula ticks fallidos. La creación es
 // idempotente (EnsureScheduleAsync captura ScheduleAlreadyRunningException).
 var monitorOptions = provider.GetRequiredService<MonitorOptions>();
+var clusterOptions = provider.GetRequiredService<MonitorClusterOptions>();
 var scheduleClient = await provider.GetRequiredService<Lazy<Task<ITemporalClient>>>().Value;
+
+// Namespace propio del monitor: se crea si no existe antes de tocar el Schedule (spec 12).
+await NamespaceBootstrapper.EnsureNamespaceAsync(scheduleClient, clusterOptions.Namespace);
+
 var created = await ScheduleBootstrapper.EnsureScheduleAsync(scheduleClient, monitorOptions);
 Console.WriteLine(created
     ? $"Schedule '{monitorOptions.ScheduleId}' creado."

@@ -1,5 +1,6 @@
 using Common;
 using Contracts;
+using Contracts.Monitor;
 using Contracts.Workflows;
 using MonitorApi.Endpoints;
 using MonitorApi.Infrastructure;
@@ -7,8 +8,8 @@ using Temporalio.Client;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Dónde corre el cluster propio del monitor (conexión del cliente de la API y del worker).
-var temporalHost = Environment.GetEnvironmentVariable("TEMPORAL_HOST") ?? "temporal:7233";
+// Cluster y namespace propios del monitor (conexión del cliente de la API y del worker).
+var clusterOptions = MonitorClusterOptions.FromEnvironment();
 // Task queue del worker del monitor; se expone en /health para diagnóstico.
 var taskQueue = Environment.GetEnvironmentVariable("MONITOR_TASK_QUEUE") ?? TaskQueues.PatchMonitor;
 // Namespace observado. Declarado ya en el spec 01 (sin consumidor real todavía); el spec 03
@@ -17,10 +18,16 @@ var targetNamespace = Environment.GetEnvironmentVariable("TARGET_TEMPORAL_NAMESP
 
 // TemporalClient singleton. Se conecta de forma ansiosa (igual que el OrderApi del repo de
 // referencia); con depends_on: temporal + reintentos de ConnectAsync alcanza para el arranque.
-builder.Services.AddSingleton(_ => TemporalClient.ConnectAsync(new TemporalClientConnectOptions
+var temporalClient = await TemporalClient.ConnectAsync(new TemporalClientConnectOptions
 {
-    TargetHost = temporalHost
-}).GetAwaiter().GetResult());
+    TargetHost = clusterOptions.Host,
+    Namespace = clusterOptions.Namespace,
+});
+
+// Namespace propio del monitor: se crea si no existe antes de que la API lo use (spec 12).
+await NamespaceBootstrapper.EnsureNamespaceAsync(temporalClient, clusterOptions.Namespace);
+
+builder.Services.AddSingleton(temporalClient);
 
 builder.Services.AddMonitorApiServices();
 
