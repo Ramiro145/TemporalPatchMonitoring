@@ -1,4 +1,4 @@
-import { Pause, Play, RotateCcw } from "lucide-react";
+import { ArrowRight, Pause, Play, RotateCcw } from "lucide-react";
 import { NavLink } from "react-router";
 import {
   useHealth,
@@ -10,6 +10,7 @@ import {
 import { ScheduleUnavailableError } from "@/api/client";
 import { RelativeTime } from "@/components/RelativeTime";
 import { StatusDot } from "@/components/StatusDot";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -64,7 +65,7 @@ export function TopBar() {
         </nav>
       </div>
 
-      <div className="flex flex-wrap items-center gap-4 text-sm">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
         <div className="flex items-center gap-1.5">
           <StatusDot status={healthStatus} />
           <span className="text-muted-foreground">
@@ -77,10 +78,15 @@ export function TopBar() {
         </div>
 
         {health.data && (
-          <span className="text-muted-foreground">
-            monitor: {health.data.monitorNamespace} · observado:{" "}
-            {health.data.targetNamespace}
-          </span>
+          <div className="flex items-center gap-1">
+            <Badge variant="outline" className="font-mono text-[11px]">
+              {health.data.monitorNamespace}
+            </Badge>
+            <ArrowRight className="size-3 text-muted-foreground" />
+            <Badge variant="outline" className="font-mono text-[11px]">
+              {health.data.targetNamespace}
+            </Badge>
+          </div>
         )}
 
         {scheduleUnavailable && (
@@ -89,13 +95,17 @@ export function TopBar() {
 
         {schedule.data && (
           <>
-            <span className="text-muted-foreground">
-              {schedule.data.paused
-                ? "Pausado"
-                : formatInterval(schedule.data.interval)}{" "}
-              · última <RelativeTime at={schedule.data.lastRunAt} /> · próxima{" "}
-              <RelativeTime at={schedule.data.nextRunAt} />
-            </span>
+            <div className="flex flex-col leading-tight">
+              <span>
+                {schedule.data.paused
+                  ? "Pausado"
+                  : formatInterval(schedule.data.interval)}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                última <RelativeTime at={schedule.data.lastRunAt} /> · próxima{" "}
+                <RelativeTime at={schedule.data.nextRunAt} />
+              </span>
+            </div>
             <div className="flex items-center gap-1.5">
               <Button
                 size="sm"
