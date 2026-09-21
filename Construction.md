@@ -65,6 +65,7 @@ Estas decisiones **no se re-discuten** en los specs; se citan.
 | Auditoría histórica de largo plazo | Fuera de alcance del núcleo; se cubre a futuro con un adaptador `IDecisionSink` aditivo | `Continue-As-New` trunca la Event History; si hace falta consultar "hace 8 meses", va a un sink dedicado, sin reescribir el núcleo |
 | Entregables extra | API mínima de control + notificador pluggable + **frontend de observabilidad** (spec 11, decisión reabierta el 2026-09-14) | Sin spec dedicado de tests (cada spec lleva los suyos). El "sin frontend" original asumía que Swagger alcanzaba como interfaz; el spec 09 cerró el objetivo central del README y dejó la observabilidad —no la capacidad— como el cuello de botella real para reusar el monitor en otros proyectos, de ahí el spec 11 |
 | Stack | `.NET 8`, `Temporalio` 1.9.0, `temporalio/auto-setup:1.23.0`, `temporalio/ui:2.23.0`, Postgres 15, Docker Compose. **Sin SQL Server.** | Igualar el repo de referencia; SQL Server sale porque no hay BD propia |
+| Aislamiento del estado propio | Por **namespace** (`monitor` propio / `default` observado) en un cluster de Temporal existente, no por un cluster propio dedicado (spec 12, reemplaza el supuesto original del spec 01) | Dos namespaces en el mismo cluster ya no comparten Event History, Visibility ni Search Attributes; exigir un segundo Temporal completo solo para el monitor era la barrera de adopción real al querer probarlo contra un segundo proyecto |
 
 ---
 
@@ -108,7 +109,7 @@ Layout objetivo bajo `src/`, todos `net8.0`, `Temporalio` 1.9.0:
 | `Contracts` | Interfaces de workflow compartidas, DTOs, puertos (`IPatchDiscovery`, `IPhaseResolver`, `INotifier`, `IDecisionSink`). Todo lo demás depende de este. |
 | `Common` | Plumbing genérico de Temporal, portado del repo de referencia: `WorkerHost`, `WorkflowStarter`, `WorkflowValidator`, más `ScheduleBootstrapper` (nuevo, spec 06). |
 | `PatchMonitor` | Worker: clases `[Workflow]` / `[Activity]` del monitor. `MonitorWorkflow`, `PatchStateWorkflow` (entity), `PatchRegistryWorkflow` (índice). Activities respaldadas por `Services/*`. |
-| `MonitorApi` | API mínima de ASP.NET Core: único punto de entrada HTTP. `TemporalClient` singleton (`TEMPORAL_HOST`, default `temporal:7233`). |
+| `MonitorApi` | API mínima de ASP.NET Core: único punto de entrada HTTP. `TemporalClient` singleton vía `MonitorClusterOptions` (`TEMPORAL_HOST`/`TEMPORAL_NAMESPACE`, spec 12). |
 
 Docker: carpeta `docker/` con un Dockerfile por servicio + `docker-compose.yml`. El worker lleva
 `stop_grace_period` mayor que los 30 s de `GracefulShutdownTimeout`.
@@ -177,6 +178,7 @@ Derivada de las 6 specs de `ReleaseOrderDemo`. Cada `/spec` que se cree debe res
 | 09 | `multi-target-e2e-validation` | Apuntar el monitor al `ReleaseOrderDemo` real y reproducir el recorrido de fases del artifact | 08 |
 | 10 | `self-versioning-and-drain` | Aplicar el ciclo `Patched → DeprecatePatch → limpio` al propio `MonitorWorkflow` — **diferido, ver nota abajo** | 09 |
 | 11 | `monitor-web-mvp` | Dashboard React que consume `MonitorApi` para observar patches y controlar el Schedule sin Swagger | 09 |
+| 12 | `single-cluster-namespace-isolation` | Apoyarse en un cluster de Temporal existente en vez de levantar el suyo propio, aislando el estado por namespace (`monitor` vs. `default`) | 09 |
 
 ### Por qué van en ese orden
 
@@ -260,6 +262,17 @@ tocar la reserva ya hecha de `self-versioning-and-drain`, que sigue diferido per
 Entrega un dashboard React (Vite, `web/` en este mismo repo) que consume `MonitorApi` sin agregar
 ningún camino de escritura que el spec 08 no tuviera ya, salvo CORS y un `GET /runs` de solo lectura
 para exponer los `MonitorRunSummary` que hoy solo viven en la Event History.
+
+**12 — Un cluster, dos namespaces.**
+Depende de 09, no de 10 u 11: no toca capacidad de observación ni el frontend, corrige dónde vive
+el estado propio del monitor. El `docker-compose.yml` del spec 01 levantaba un Temporal completo
+propio exactamente porque en ese momento la separación era "dos clusters, nunca mezclar"; con el
+default histórico de `TARGET_TEMPORAL_NAMESPACE` (`default`) coincidiendo con el namespace al que
+caía el monitor sin `Namespace` explícito, el monitor se descubría a sí mismo en silencio. Entrega
+`MonitorClusterOptions` (análogo a `TargetHost` en `DiscoveryOptions`), `NamespaceBootstrapper`
+(crea el namespace propio si no existe, mismo contrato de efecto que `ScheduleBootstrapper`), la
+guarda de arranque que advierte la auto-observación, y el perfil `standalone` en el compose para
+quien no tenga un cluster existente a mano.
 
 ### Testing
 

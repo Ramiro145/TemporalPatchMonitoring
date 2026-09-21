@@ -47,8 +47,10 @@ marker del patch. PatchMonitor automatiza exactamente esa revisión.
 - **Docker Desktop** (o Docker Engine + Compose v2). Es lo único necesario para correrlo.
 - **.NET 8 SDK**, solo si vas a compilar o correr los tests fuera de Docker.
 - **Node 24**, solo si vas a correr el dashboard (`web/`) con `npm run dev` en vez de por Docker.
-- Un cluster de Temporal a observar (opcional para una primera prueba: por defecto el monitor se
-  observa a sí mismo).
+- **Un cluster de Temporal ya corriendo**, publicado en `localhost:7233` (por ejemplo, el de tu
+  propio proyecto). El monitor se apoya en él y se aísla por namespace, no por cluster (spec 12).
+  Si no tenés uno a mano, `docker compose --profile standalone up -d` levanta un Temporal propio
+  completo — ver [Levantarlo](#levantarlo).
 
 Stack: .NET 8, `Temporalio` 1.9.0, `temporalio/auto-setup:1.23.0`, `temporalio/ui:2.23.0`,
 Postgres 15, React 19 + Vite + TypeScript (`web/`, spec 11). **Sin SQL Server**: el estado del
@@ -56,25 +58,39 @@ monitor vive en Temporal mismo.
 
 ## Levantarlo
 
-Desde la carpeta `docker/`:
+Con un cluster de Temporal ya corriendo en `localhost:7233` (el de tu proyecto), desde la carpeta
+`docker/`:
 
 ```powershell
 docker compose build
 docker compose up -d
-docker compose ps          # los 6 servicios deben quedar arriba
+docker compose ps          # los 3 servicios deben quedar arriba
 ```
 
 | Servicio | Qué es | Puerto en el host |
 | -------- | ------ | ----------------- |
-| `temporal` | Cluster de Temporal **propio del monitor** (guarda su estado) | `7234` |
-| `temporal-db` | Postgres del cluster propio | `5433` |
-| `temporal-ui` | UI web de ese cluster | `8234` → <http://localhost:8234> |
 | `patch-monitor-worker` | Worker: descubre, evalúa, persiste y notifica | — |
 | `monitor-api` | API HTTP de consulta y control | `5100` → <http://localhost:5100/swagger> |
 | `monitor-web` | Dashboard web de observabilidad (spec 11) | `5101` → <http://localhost:5101> |
 
-Los puertos están corridos (7234, 8234, 5433, 5100, 5101) a propósito, para poder correr en la
-misma máquina que un proyecto que ya use 7233/8233/5432.
+El worker y la API se conectan a `host.docker.internal:7233` y crean el namespace `monitor` si
+no existe (`NamespaceBootstrapper`), aislado del namespace `default` que observan — mismo
+cluster, sin mezclar estado.
+
+**¿No tenés un cluster propio a mano?** `docker compose --profile standalone up -d` agrega un
+Temporal completo (`temporal`, `temporal-db`, `temporal-ui`) para probar el monitor solo:
+
+| Servicio adicional (`--profile standalone`) | Qué es | Puerto en el host |
+| -------------------------------------------- | ------ | ----------------- |
+| `temporal` | Cluster de Temporal de prueba | `7234` |
+| `temporal-db` | Postgres de ese cluster | `5433` |
+| `temporal-ui` | UI web de ese cluster | `8234` → <http://localhost:8234> |
+
+Esos puertos están corridos (7234, 8234, 5433) a propósito, para poder correr en la misma
+máquina que un proyecto que ya use 7233/8233/5432. Con el perfil `standalone`, `TEMPORAL_HOST` y
+`TARGET_TEMPORAL_HOST` siguen apuntando a `host.docker.internal:7233`: si ese Temporal de prueba
+es el único cluster disponible, el monitor termina observándose a sí mismo (namespace `monitor`
+en vez de `default`) — la guarda de arranque lo advierte en el log, sin bloquear.
 
 Al arrancar, el worker crea el Schedule `patch-monitor-schedule` (idempotente) y desde ahí corre
 una pasada cada 5 minutos. Para comprobar que está vivo:
@@ -86,20 +102,22 @@ docker compose logs --tail=50 patch-monitor-worker
 
 ## Apuntarlo a tu proyecto
 
-El monitor distingue dos clusters:
+El monitor distingue dos **namespaces**, no dos clusters (spec 12):
 
-- `TEMPORAL_HOST` — el **suyo**, donde guarda su estado. No lo cambies.
-- `TARGET_TEMPORAL_HOST` + `TARGET_TEMPORAL_NAMESPACE` — el **observado**, el de tu proyecto.
+- `TEMPORAL_HOST` / `TEMPORAL_NAMESPACE` — el **propio**, donde guarda su estado (default
+  `host.docker.internal:7233` / `monitor`). Normalmente no hace falta tocarlo.
+- `TARGET_TEMPORAL_HOST` + `TARGET_TEMPORAL_NAMESPACE` — el **observado**, el de tu proyecto
+  (default `host.docker.internal:7233` / `default`).
 
-Para no modificar el compose base, creá un overlay (el repo trae uno de ejemplo,
-`docker/docker-compose.e2e.yml`, que apunta al `ReleaseOrderDemo`):
+Si tu proyecto ya corre en `host.docker.internal:7233` con namespace `default`, el compose base
+alcanza sin overlay. Si tu namespace se llama distinto, o tu cluster vive en otra máquina, creá un
+overlay (el repo trae uno de ejemplo, `docker/docker-compose.e2e.yml`, que ajusta las ventanas de
+descubrimiento contra el `ReleaseOrderDemo`):
 
 ```yaml
 # docker/docker-compose.miproyecto.yml
 services:
   patch-monitor-worker:
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     environment:
       - TARGET_TEMPORAL_HOST=host.docker.internal:7233   # o el host:puerto real de tu cluster
       - TARGET_TEMPORAL_NAMESPACE=mi-namespace
@@ -114,9 +132,10 @@ services:
 docker compose -f docker-compose.yml -f docker-compose.miproyecto.yml up -d
 ```
 
-`host.docker.internal` sirve cuando tu Temporal publica el puerto en la misma máquina. Si está en
-otro servidor, poné su dirección directamente. **Si ya habías levantado el monitor antes**, borrá su
-volumen (`docker compose down -v`) para que el Schedule se recree con la configuración nueva.
+`host.docker.internal` sirve cuando tu Temporal publica el puerto en la misma máquina (el compose
+base ya trae el `extra_hosts` necesario para ambos servicios). Si está en otro servidor, poné su
+dirección directamente. **Si ya habías levantado el monitor antes**, borrá su volumen
+(`docker compose down -v`) para que el Schedule se recree con la configuración nueva.
 
 Antes de confiar en el resultado, dimensioná los topes de descubrimiento al volumen de tu
 namespace: el monitor inspecciona **todos** los workflow types del namespace, no solo los que
@@ -271,7 +290,9 @@ Todas las variables son opcionales; un valor ausente, no numérico o no positivo
 
 | Variable | Default | Qué controla |
 | -------- | ------- | ------------ |
-| `TEMPORAL_HOST` | `temporal:7233` | Cluster **propio** del monitor |
+| `TEMPORAL_HOST` | `temporal:7233` | Cluster de la conexión **propia** del monitor |
+| `TEMPORAL_NAMESPACE` | `monitor` | Namespace **propio**, donde vive su estado |
+| `MONITOR_NAMESPACE_RETENTION_DAYS` | `7` | Retención del namespace propio si `NamespaceBootstrapper` lo crea |
 | `MONITOR_TASK_QUEUE` | `patch-monitor-task-queue` | Task queue del worker |
 | `TARGET_TEMPORAL_HOST` | `temporal:7233` | Cluster **observado** |
 | `TARGET_TEMPORAL_NAMESPACE` | `default` | Namespace observado |
@@ -344,7 +365,11 @@ Cero cambios de código en el monitor para apuntarlo ahí. El procedimiento est�
 
 ## Límites conocidos
 
-- **Un namespace y un cluster por instancia.** Para observar varios, corré una instancia por cada uno.
+- **Un namespace observado por instancia.** Para observar varios, corré una instancia por cada uno
+  (el aislamiento del estado propio es por namespace, no por cluster — spec 12).
+- **Sin migración de datos entre namespaces.** Quien venía corriendo el monitor con estado en el
+  namespace `default` propio (antes del spec 12) empieza de cero en `monitor`; mismo criterio que
+  "si cambiás la configuración del Schedule, `docker compose down -v`".
 - **El costo escala con el tamaño del namespace**, no con la cantidad de patches: el descubrimiento
   no filtra por workflow type. Ajustá `DISCOVERY_*` antes de confiar en el resultado.
 - **Convención de marker `core_patch`**: la emiten los SDKs basados en sdk-core (como el de .NET).

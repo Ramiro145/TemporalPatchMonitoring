@@ -56,9 +56,17 @@ Flujo de un tick: Schedule → `MonitorWorkflow` → `DiscoveryActivities` (dos 
 `PatchStateActivities` (signal-with-start al entity) → `NotificationActivities` solo si la
 `Revision` avanzó.
 
-Dos clusters, nunca mezclar:
-- `TEMPORAL_HOST` — cluster **propio**; ahí vive todo el estado del monitor.
-- `TARGET_TEMPORAL_HOST` / `TARGET_TEMPORAL_NAMESPACE` — cluster **observado**; solo lectura.
+Un solo cluster de Temporal, aislado por **namespace** (spec 12), no por cluster:
+- `TEMPORAL_HOST` / `TEMPORAL_NAMESPACE` — namespace **propio** del monitor (default `monitor`);
+  ahí vive todo su estado. `NamespaceBootstrapper` lo crea si no existe.
+- `TARGET_TEMPORAL_HOST` / `TARGET_TEMPORAL_NAMESPACE` — namespace **observado** (default
+  `default`); solo lectura.
+
+Por default ambos apuntan al mismo cluster existente (`host.docker.internal:7233` en
+`docker-compose.yml`); el monitor no levanta su propio Temporal salvo con
+`docker compose --profile standalone up -d`. Si `TEMPORAL_HOST`/`TEMPORAL_NAMESPACE` coinciden
+con `TARGET_TEMPORAL_HOST`/`TARGET_TEMPORAL_NAMESPACE`, el worker loguea una advertencia (nunca
+excepción) de que el monitor se va a observar a sí mismo.
 
 ## Convenciones de código
 
@@ -91,8 +99,10 @@ docker compose logs --tail=100 patch-monitor-worker
 docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d
 ```
 
-Puertos del host: Temporal `7234`, UI `8234`, Postgres `5433`, API `5100`, dashboard `5101`
-(corridos para convivir con un proyecto en 7233/8233/5432). `EnsureScheduleAsync` es
+Puertos del host: API `5100`, dashboard `5101`. Por default el monitor no levanta Temporal
+propio — apunta al cluster existente en `host.docker.internal:7233` (spec 12). Solo con
+`docker compose --profile standalone up -d` se agregan Temporal `7234`, UI `8234` y Postgres
+`5433` (corridos para convivir con un proyecto en 7233/8233/5432). `EnsureScheduleAsync` es
 create-if-absent: si cambiás la configuración del Schedule, hacé `docker compose down -v` para que
 se recree.
 
