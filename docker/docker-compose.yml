@@ -3,8 +3,11 @@
 name: patchmonitor
 
 services:
+  # Temporal propio, solo para quien no tenga un cluster existente a mano. No se levanta con
+  # `docker compose up -d` por default (spec 12): requiere `--profile standalone` explícito.
   temporal:
     image: temporalio/auto-setup:1.23.0
+    profiles: ["standalone"]
     depends_on:
       temporal-db:
         condition: service_healthy
@@ -35,6 +38,7 @@ services:
 
   temporal-db:
     image: postgres:15
+    profiles: ["standalone"]
     environment:
       POSTGRES_USER: temporal
       POSTGRES_PASSWORD: temporal
@@ -51,6 +55,7 @@ services:
 
   temporal-ui:
     image: temporalio/ui:2.23.0
+    profiles: ["standalone"]
     depends_on:
       - temporal
     ports:
@@ -66,9 +71,12 @@ services:
     # las Activities en vuelo antes de mandar SIGKILL.
     stop_grace_period: 45s
     environment:
-      - TEMPORAL_HOST=temporal:7233
+      # Cluster existente en el host (ReleaseOrderDemo u otro), no un Temporal propio (spec 12):
+      # el estado del monitor se aisla por namespace (`monitor`), no por cluster.
+      - TEMPORAL_HOST=host.docker.internal:7233
+      - TEMPORAL_NAMESPACE=monitor
       - MONITOR_TASK_QUEUE=patch-monitor-task-queue
-      - TARGET_TEMPORAL_HOST=temporal:7233
+      - TARGET_TEMPORAL_HOST=host.docker.internal:7233
       - TARGET_TEMPORAL_NAMESPACE=default
       # Descubrimiento en dos niveles (spec 03). Topes por corrida y ventana de cerradas.
       - DISCOVERY_LOOKBACK_DAYS=7
@@ -92,9 +100,13 @@ services:
       - NOTIFIER_WEBHOOK_AUTH_HEADER=
       - NOTIFIER_WEBHOOK_TIMEOUT_SECONDS=10
       - NOTIFIER_MAX_ATTEMPTS=3
-    depends_on:
-      temporal:
-        condition: service_healthy
+    # host.docker.internal solo resuelve dentro del contenedor con este mapeo explícito
+    # (necesario en Linux; en Docker Desktop ya funciona pero no molesta declararlo igual).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # Sin depends_on: condition: service_healthy — temporal ya no arranca en este perfil.
+    # NamespaceBootstrapper y la conexión del cliente reintentan solos si el cluster tarda
+    # en estar arriba.
 
   monitor-api:
     build:
@@ -103,9 +115,10 @@ services:
     ports:
       - "5100:5100"
     environment:
-      - TEMPORAL_HOST=temporal:7233
+      - TEMPORAL_HOST=host.docker.internal:7233
+      - TEMPORAL_NAMESPACE=monitor
       - MONITOR_TASK_QUEUE=patch-monitor-task-queue
-      - TARGET_TEMPORAL_HOST=temporal:7233
+      - TARGET_TEMPORAL_HOST=host.docker.internal:7233
       - TARGET_TEMPORAL_NAMESPACE=default
       # El store de la API arranca entities (spec 05): mismo umbral de Continue-As-New y
       # tope de historial que patch-monitor-worker, para no divergir en cómo se lee el estado.
@@ -118,9 +131,8 @@ services:
       # por defecto de un override sin ExpiresAt explícito.
       - API_MAX_LIST_PATCHES=100
       - API_OVERRIDE_DEFAULT_TTL_HOURS=24
-    depends_on:
-      temporal:
-        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   monitor-web:
     build:
