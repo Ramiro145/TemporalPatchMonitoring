@@ -1,32 +1,34 @@
-import { Pause, Play, RotateCcw } from "lucide-react"
-import { NavLink } from "react-router"
+import { Pause, Play, RotateCcw } from "lucide-react";
+import { NavLink } from "react-router";
 import {
   useHealth,
   usePauseSchedule,
   useSchedule,
   useTriggerSchedule,
   useUnpauseSchedule,
-} from "@/api/hooks"
-import { ScheduleUnavailableError } from "@/api/client"
-import { RelativeTime } from "@/components/RelativeTime"
-import { StatusDot } from "@/components/StatusDot"
-import { Button } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
+} from "@/api/hooks";
+import { ScheduleUnavailableError } from "@/api/client";
+import { RelativeTime } from "@/components/RelativeTime";
+import { StatusDot } from "@/components/StatusDot";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 function formatInterval(interval: string): string {
-  const [h, m, s] = interval.split(":").map(Number)
-  const parts: string[] = []
-  if (h) parts.push(`${h} h`)
-  if (m) parts.push(`${m} min`)
-  if (s && !h && !m) parts.push(`${s} s`)
-  return parts.length ? `cada ${parts.join(" ")}` : interval
+  const [h, m, s] = interval.split(":").map(Number);
+  const parts: string[] = [];
+  if (h) parts.push(`${h} h`);
+  if (m) parts.push(`${m} min`);
+  if (s && !h && !m) parts.push(`${s} s`);
+  return parts.length ? `cada ${parts.join(" ")}` : interval;
 }
 
 function navLinkClass({ isActive }: { isActive: boolean }): string {
   return cn(
     "rounded-md px-2.5 py-1 text-sm font-medium transition-colors",
-    isActive ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground",
-  )
+    isActive
+      ? "bg-muted text-foreground"
+      : "text-muted-foreground hover:text-foreground",
+  );
 }
 
 /**
@@ -34,14 +36,19 @@ function navLinkClass({ isActive }: { isActive: boolean }): string {
  * del Schedule con sus acciones, y la navegación entre Patches y Corridas.
  */
 export function TopBar() {
-  const health = useHealth()
-  const schedule = useSchedule()
-  const trigger = useTriggerSchedule()
-  const pause = usePauseSchedule()
-  const unpause = useUnpauseSchedule()
+  const health = useHealth();
+  const schedule = useSchedule();
+  const trigger = useTriggerSchedule();
+  const pause = usePauseSchedule();
+  const unpause = useUnpauseSchedule();
 
-  const scheduleUnavailable = schedule.error instanceof ScheduleUnavailableError
-  const healthStatus = health.data ? health.data.temporal : health.isError ? "unreachable" : "unknown"
+  const scheduleUnavailable =
+    schedule.error instanceof ScheduleUnavailableError;
+  const healthStatus = health.data
+    ? health.data.temporal
+    : health.isError
+      ? "unreachable"
+      : "unknown";
 
   return (
     <header className="flex flex-wrap items-center justify-between gap-3 border-b bg-background px-4 py-3">
@@ -52,7 +59,7 @@ export function TopBar() {
             Patches
           </NavLink>
           <NavLink to="/runs" className={navLinkClass}>
-            Corridas
+            Ejecuciones
           </NavLink>
         </nav>
       </div>
@@ -69,17 +76,26 @@ export function TopBar() {
           </span>
         </div>
 
-        {scheduleUnavailable && <span className="text-muted-foreground">Schedule no disponible</span>}
+        {scheduleUnavailable && (
+          <span className="text-muted-foreground">Schedule no disponible</span>
+        )}
 
         {schedule.data && (
           <>
             <span className="text-muted-foreground">
-              {schedule.data.paused ? "Pausado" : formatInterval(schedule.data.interval)} · última{" "}
-              <RelativeTime at={schedule.data.lastRunAt} /> · próxima{" "}
+              {schedule.data.paused
+                ? "Pausado"
+                : formatInterval(schedule.data.interval)}{" "}
+              · última <RelativeTime at={schedule.data.lastRunAt} /> · próxima{" "}
               <RelativeTime at={schedule.data.nextRunAt} />
             </span>
             <div className="flex items-center gap-1.5">
-              <Button size="sm" variant="outline" onClick={() => trigger.mutate()} disabled={trigger.isPending}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => trigger.mutate()}
+                disabled={trigger.isPending}
+              >
                 <Play /> Disparar ahora
               </Button>
               {schedule.data.paused ? (
@@ -106,5 +122,5 @@ export function TopBar() {
         )}
       </div>
     </header>
-  )
+  );
 }
