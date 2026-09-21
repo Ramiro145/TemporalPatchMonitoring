@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Common;
 using Contracts;
+using Contracts.Discovery;
 using Contracts.Monitor;
 using PatchMonitor.Activities;
 using PatchMonitor.Infrastructure;
@@ -19,7 +20,18 @@ var provider = services.BuildServiceProvider();
 // idempotente (EnsureScheduleAsync captura ScheduleAlreadyRunningException).
 var monitorOptions = provider.GetRequiredService<MonitorOptions>();
 var clusterOptions = provider.GetRequiredService<MonitorClusterOptions>();
+var discoveryOptions = provider.GetRequiredService<DiscoveryOptions>();
 var scheduleClient = await provider.GetRequiredService<Lazy<Task<ITemporalClient>>>().Value;
+
+// Guarda de auto-observación (spec 12): si el cluster/namespace propio coincide con el
+// observado, el monitor se va a descubrir a sí mismo. Nunca bloquea (convención del repo).
+if (clusterOptions.Host == discoveryOptions.TargetHost &&
+    clusterOptions.Namespace == discoveryOptions.Namespace)
+{
+    Console.WriteLine(
+        $"ADVERTENCIA: el monitor va a observarse a sí mismo — su propio cluster/namespace " +
+        $"('{clusterOptions.Host}', '{clusterOptions.Namespace}') coincide con el observado.");
+}
 
 // Namespace propio del monitor: se crea si no existe antes de tocar el Schedule (spec 12).
 await NamespaceBootstrapper.EnsureNamespaceAsync(scheduleClient, clusterOptions.Namespace);
