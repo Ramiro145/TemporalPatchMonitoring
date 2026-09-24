@@ -12,25 +12,34 @@ public class PhaseOptionsTests
 {
     private const string Var = "PHASE_CLEAN_GRACE_HOURS";
     private const string MinutesVar = "PHASE_CLEAN_GRACE_MINUTES";
+    private const string ConfidenceVar = "PHASE_CLEAN_CONFIDENCE";
 
     private static PhaseOptions WithEnv(string? value) => WithEnv(value, null);
 
-    private static PhaseOptions WithEnv(string? hoursValue, string? minutesValue)
+    private static PhaseOptions WithEnv(string? hoursValue, string? minutesValue) =>
+        WithEnv(hoursValue, minutesValue, null);
+
+    private static PhaseOptions WithEnv(string? hoursValue, string? minutesValue, string? confidenceValue)
     {
         var savedHours = Environment.GetEnvironmentVariable(Var);
         var savedMinutes = Environment.GetEnvironmentVariable(MinutesVar);
+        var savedConfidence = Environment.GetEnvironmentVariable(ConfidenceVar);
         try
         {
             Environment.SetEnvironmentVariable(Var, hoursValue);
             Environment.SetEnvironmentVariable(MinutesVar, minutesValue);
+            Environment.SetEnvironmentVariable(ConfidenceVar, confidenceValue);
             return PhaseOptions.FromEnvironment();
         }
         finally
         {
             Environment.SetEnvironmentVariable(Var, savedHours);
             Environment.SetEnvironmentVariable(MinutesVar, savedMinutes);
+            Environment.SetEnvironmentVariable(ConfidenceVar, savedConfidence);
         }
     }
+
+    private static PhaseOptions WithConfidence(string? value) => WithEnv(null, null, value);
 
     [Fact]
     public void Ausente_devuelve_el_default_de_24_horas()
@@ -89,5 +98,36 @@ public class PhaseOptionsTests
         var options = WithEnv(hoursValue: "48", minutesValue: basura);
 
         Assert.Equal(TimeSpan.FromHours(48), options.CleanGrace);
+    }
+
+    [Fact]
+    public void Confidence_ausente_devuelve_el_default_de_0_95()
+    {
+        var options = WithConfidence(null);
+
+        Assert.Equal(PhaseOptions.DefaultCleanConfidence, options.CleanConfidence);
+        Assert.Equal(0.95, options.CleanConfidence);
+    }
+
+    [Fact]
+    public void Confidence_valor_valido_se_respeta()
+    {
+        var options = WithConfidence("0.9");
+
+        Assert.Equal(0.9, options.CleanConfidence);
+    }
+
+    [Theory]
+    [InlineData("basura")]
+    [InlineData("")]
+    [InlineData("0")]
+    [InlineData("1")]
+    [InlineData("-0.5")]
+    [InlineData("1.5")]
+    public void Confidence_no_numerica_o_fuera_de_rango_cae_al_default_sin_lanzar(string basura)
+    {
+        var options = WithConfidence(basura);
+
+        Assert.Equal(PhaseOptions.DefaultCleanConfidence, options.CleanConfidence);
     }
 }
