@@ -108,10 +108,10 @@ public class PhaseResolverTests
     // ── Caso 3: código limpio ────────────────────────────────────────────────
 
     [Fact]
-    public void Caso3_sin_abiertas_con_marker_y_ejecucion_nueva_sin_marker_pasado_el_margen_da_Clean()
+    public void Caso3_sin_abiertas_con_marker_deprecado_y_ejecucion_nueva_sin_marker_pasado_el_margen_da_Clean()
     {
         var res = Resolver(cleanGrace: TimeSpan.FromHours(24)).Resolve(Of(
-            Closed().WithMarker().StartedAt(T0),
+            Closed().WithDeprecatedMarker().StartedAt(T0),
             Closed().WithoutMarker().StartedAt(T0.AddHours(25))));
 
         Assert.Equal(PatchPhase.Clean, res.Phase);
@@ -123,10 +123,10 @@ public class PhaseResolverTests
     public void Caso3_ejecucion_sin_marker_dentro_del_margen_no_da_Clean_y_cae_al_ultimo_marker()
     {
         var res = Resolver(cleanGrace: TimeSpan.FromHours(24)).Resolve(Of(
-            Closed().WithMarker().StartedAt(T0),
+            Closed().WithDeprecatedMarker().StartedAt(T0),
             Closed().WithoutMarker().StartedAt(T0.AddHours(10))));
 
-        Assert.Equal(PatchPhase.Coexistence, res.Phase);
+        Assert.Equal(PatchPhase.Deprecated, res.Phase);
     }
 
     [Fact]
@@ -138,6 +138,19 @@ public class PhaseResolverTests
 
         Assert.Equal(PatchPhase.Deprecated, res.Phase);
         Assert.NotEqual(PatchPhase.Clean, res.Phase);
+    }
+
+    // ── Capa 1 (spec 13): no saltar fases — sin marker Deprecated no hay Clean ─
+
+    [Fact]
+    public void Capa1_marker_nunca_deprecado_no_da_Clean_aunque_haya_evidencia_de_codigo_limpio()
+    {
+        var res = Resolver(cleanGrace: TimeSpan.FromHours(24)).Resolve(Of(
+            Closed().WithMarker().StartedAt(T0),
+            Closed().WithoutMarker().StartedAt(T0.AddHours(25))));
+
+        Assert.NotEqual(PatchPhase.Clean, res.Phase);
+        Assert.Equal(PatchPhase.Coexistence, res.Phase);
     }
 
     // ── Desempate explícito: empate de StartTime Present vs PresentDeprecated ──

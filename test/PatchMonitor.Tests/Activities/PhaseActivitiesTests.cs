@@ -43,7 +43,7 @@ public class PhaseActivitiesTests
     public void Fase_Clean_da_Verdict_null()
     {
         var assessment = Activities().AssessPatch(Of(
-            Closed().WithMarker().StartedAt(T0),
+            Closed().WithDeprecatedMarker().StartedAt(T0),
             Closed().WithoutMarker().StartedAt(T0.AddHours(25))));
 
         Assert.Equal(PatchPhase.Clean, assessment.Resolution.Phase);
