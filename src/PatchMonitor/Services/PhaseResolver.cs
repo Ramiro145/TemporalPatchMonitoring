@@ -65,13 +65,13 @@ public sealed class PhaseResolver : IPhaseResolver
 
         var withMarker = snaps.Where(HasMarker).ToList();
 
-        // Caso 3: código limpio. Exige (spec 04 + Capa 1 del spec 13):
+        // Caso 3: código limpio. Exige (spec 04 + Capa 1 y Capa 2 del spec 13):
         // - Que no quede ninguna ejecución ABIERTA con marker (si queda, el patch sigue en fase 2).
         // - Capa 1 (no saltar fases): al menos un marker PresentDeprecated en la ventana — un
         //   patch que nunca pasó por Deprecated no puede saltar directo a Clean.
-        // - Evidencia POSITIVA de código nuevo: una ejecución sin marker arrancada más de
-        //   CleanGrace después del último marker. Sin esto, un patch cuyas ejecuciones con
-        //   marker simplemente drenaron se leería como Clean de más.
+        // - Capa 2 (evidencia mínima adaptativa): ver EnoughAbsentEvidence. Sin esto, un patch
+        //   cuyas ejecuciones con marker simplemente drenaron, o que vive en una rama de código
+        //   poco ejercida, se leería como Clean de más ("falso Clean").
         if (withMarker.Count > 0
             && !withMarker.Any(s => s.Status.IsOpen())
             && withMarker.Any(s => s.Marker == MarkerPresence.PresentDeprecated))
@@ -79,13 +79,30 @@ public sealed class PhaseResolver : IPhaseResolver
             var lastMarkerStart = withMarker.Max(s => s.StartTime);
             var cutoff = lastMarkerStart + _options.CleanGrace;
 
-            if (snaps.Any(s => s.Marker == MarkerPresence.Absent && s.StartTime > cutoff))
+            var (isClean, requiredAbsences, p, seenAbsences) =
+                EnoughAbsentEvidence(snaps, cutoff, _options.CleanConfidence);
+
+            if (isClean)
             {
                 return Inferred(
                     PatchPhase.Clean,
                     $"sin marker desde {lastMarkerStart:o}; código limpio",
                     now);
             }
+
+            var newestPending = NewestWithMarker(withMarker);
+            var missing = requiredAbsences - seenAbsences;
+            return newestPending.Marker == MarkerPresence.PresentDeprecated
+                ? Inferred(
+                    PatchPhase.Deprecated,
+                    $"faltan {missing} ejecuciones sin marker para confirmar Clean "
+                        + $"(p={p:0.00}, N={requiredAbsences}, vistas={seenAbsences})",
+                    now)
+                : Inferred(
+                    PatchPhase.Coexistence,
+                    $"faltan {missing} ejecuciones sin marker para confirmar Clean "
+                        + $"(p={p:0.00}, N={requiredAbsences}, vistas={seenAbsences})",
+                    now);
         }
 
         if (withMarker.Count > 0)
@@ -106,6 +123,40 @@ public sealed class PhaseResolver : IPhaseResolver
     /// <summary>"Con marker" = <see cref="MarkerPresence.Present"/> o <see cref="MarkerPresence.PresentDeprecated"/>.</summary>
     private static bool HasMarker(ExecutionSnapshot s) =>
         s.Marker is MarkerPresence.Present or MarkerPresence.PresentDeprecated;
+
+    /// <summary>
+    /// Capa 2 del spec 13: cuántas ejecuciones <see cref="MarkerPresence.Absent"/> arrancadas
+    /// después de <paramref name="cutoff"/> hacen falta para confirmar Clean, y si ya se
+    /// juntaron. <c>p</c> es la tasa de aparición del marker en la ventana observada — cuántas de
+    /// las ejecuciones con evidencia (con marker o <c>Absent</c>) arrancadas hasta el
+    /// <paramref name="cutoff"/> traían el marker propio. Cuanto más rara es la aparición
+    /// (<c>p</c> chico, patch en una rama de código poco ejercida), más ejecuciones limpias
+    /// seguidas hacen falta para que el azar de "no pasó por esa rama" sea improbable con la
+    /// <paramref name="confidence"/> pedida. Con <c>p = 1</c> (todas las ejecuciones previas
+    /// traían el marker, el caso común) da <c>N = 1</c>, igual que el comportamiento previo al
+    /// spec 13. <c>p</c> nunca puede ser 0 acá: <paramref name="cutoff"/> es posterior al
+    /// <c>StartTime</c> de toda ejecución con marker, así que esas ejecuciones siempre entran en
+    /// el numerador y el denominador.
+    /// </summary>
+    private static (bool IsClean, int RequiredAbsences, double P, int SeenAbsences) EnoughAbsentEvidence(
+        IReadOnlyList<ExecutionSnapshot> snaps, DateTimeOffset cutoff, double confidence)
+    {
+        var withEvidence = snaps.Where(s => s.StartTime <= cutoff && HasMarkerOrAbsent(s)).ToList();
+        var withMarkerBeforeCutoff = withEvidence.Count(HasMarker);
+        var p = (double)withMarkerBeforeCutoff / withEvidence.Count;
+
+        var requiredAbsences = p >= 1.0
+            ? 1
+            : Math.Max(1, (int)Math.Ceiling(Math.Log(1 - confidence) / Math.Log(1 - p)));
+
+        var seenAbsences = snaps.Count(s => s.Marker == MarkerPresence.Absent && s.StartTime > cutoff);
+
+        return (seenAbsences >= requiredAbsences, requiredAbsences, p, seenAbsences);
+    }
+
+    /// <summary>"Con evidencia" para la Capa 2 = con marker propio o confirmadamente ausente.</summary>
+    private static bool HasMarkerOrAbsent(ExecutionSnapshot s) =>
+        s.Marker is MarkerPresence.Present or MarkerPresence.PresentDeprecated or MarkerPresence.Absent;
 
     /// <summary>
     /// La ejecución con marker de <c>StartTime</c> máximo. En empate exacto de <c>StartTime</c>

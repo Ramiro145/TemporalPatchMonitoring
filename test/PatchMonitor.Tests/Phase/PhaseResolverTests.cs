@@ -153,6 +153,81 @@ public class PhaseResolverTests
         Assert.Equal(PatchPhase.Coexistence, res.Phase);
     }
 
+    // ── Capa 2 (spec 13): evidencia mínima adaptativa ──────────────────────────
+    //
+    // p = tasa de ejecuciones con marker sobre el total de evidencia (marker + Absent) antes
+    // del cutoff. N = ejecuciones Absent posteriores al cutoff necesarias para Clean, con
+    // confianza 0.95 (default). El caso "p=1 ⇒ N=1" ya lo cubre
+    // Caso3_sin_abiertas_con_marker_deprecado_y_ejecucion_nueva_sin_marker_pasado_el_margen_da_Clean.
+
+    [Fact]
+    public void Capa2_p_0_5_exige_5_ejecuciones_limpias_y_con_4_no_alcanza()
+    {
+        var grace = TimeSpan.FromHours(24);
+        var res = Resolver(cleanGrace: grace).Resolve(Of(
+            Closed().WithDeprecatedMarker().StartedAt(T0),
+            Closed().WithoutMarker().StartedAt(T0.AddHours(1)), // evidencia previa: p = 1/2 = 0.5
+            Closed().WithoutMarker().StartedAt(T0 + grace + TimeSpan.FromHours(1)),
+            Closed().WithoutMarker().StartedAt(T0 + grace + TimeSpan.FromHours(2)),
+            Closed().WithoutMarker().StartedAt(T0 + grace + TimeSpan.FromHours(3)),
+            Closed().WithoutMarker().StartedAt(T0 + grace + TimeSpan.FromHours(4))));
+
+        Assert.NotEqual(PatchPhase.Clean, res.Phase);
+        Assert.Equal(PatchPhase.Deprecated, res.Phase);
+        Assert.Contains("N=5", res.Reason);
+        Assert.Contains("faltan 1", res.Reason);
+    }
+
+    [Fact]
+    public void Capa2_p_0_5_con_5_ejecuciones_limpias_alcanza_para_Clean()
+    {
+        var grace = TimeSpan.FromHours(24);
+        var res = Resolver(cleanGrace: grace).Resolve(Of(
+            Closed().WithDeprecatedMarker().StartedAt(T0),
+            Closed().WithoutMarker().StartedAt(T0.AddHours(1)),
+            Closed().WithoutMarker().StartedAt(T0 + grace + TimeSpan.FromHours(1)),
+            Closed().WithoutMarker().StartedAt(T0 + grace + TimeSpan.FromHours(2)),
+            Closed().WithoutMarker().StartedAt(T0 + grace + TimeSpan.FromHours(3)),
+            Closed().WithoutMarker().StartedAt(T0 + grace + TimeSpan.FromHours(4)),
+            Closed().WithoutMarker().StartedAt(T0 + grace + TimeSpan.FromHours(5))));
+
+        Assert.Equal(PatchPhase.Clean, res.Phase);
+    }
+
+    [Fact]
+    public void Capa2_p_0_1_exige_29_ejecuciones_limpias_y_con_28_no_alcanza()
+    {
+        var grace = TimeSpan.FromHours(24);
+        var before = Enumerable.Range(1, 9)
+            .Select(i => Closed().WithoutMarker().StartedAt(T0.AddHours(i)));
+        var after = Enumerable.Range(1, 28)
+            .Select(i => Closed().WithoutMarker().StartedAt(T0 + grace + TimeSpan.FromHours(i)));
+        var executions = new[] { Closed().WithDeprecatedMarker().StartedAt(T0) }
+            .Concat(before).Concat(after).ToArray();
+
+        var res = Resolver(cleanGrace: grace).Resolve(Of(executions));
+
+        Assert.NotEqual(PatchPhase.Clean, res.Phase);
+        Assert.Contains("N=29", res.Reason);
+        Assert.Contains("faltan 1", res.Reason);
+    }
+
+    [Fact]
+    public void Capa2_p_0_1_con_29_ejecuciones_limpias_alcanza_para_Clean()
+    {
+        var grace = TimeSpan.FromHours(24);
+        var before = Enumerable.Range(1, 9)
+            .Select(i => Closed().WithoutMarker().StartedAt(T0.AddHours(i)));
+        var after = Enumerable.Range(1, 29)
+            .Select(i => Closed().WithoutMarker().StartedAt(T0 + grace + TimeSpan.FromHours(i)));
+        var executions = new[] { Closed().WithDeprecatedMarker().StartedAt(T0) }
+            .Concat(before).Concat(after).ToArray();
+
+        var res = Resolver(cleanGrace: grace).Resolve(Of(executions));
+
+        Assert.Equal(PatchPhase.Clean, res.Phase);
+    }
+
     // ── Desempate explícito: empate de StartTime Present vs PresentDeprecated ──
 
     [Fact]
