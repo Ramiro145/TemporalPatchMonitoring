@@ -11,6 +11,14 @@ namespace PatchMonitor.Services;
 /// descubrir patches que el atributo no trae. Agrupa por <see cref="PatchKey"/> (namespace de
 /// <see cref="DiscoveryOptions"/> + workflowType de la ejecución + patchId).
 /// </summary>
+/// <remarks>
+/// Spec 13: una ejecución se atribuye como <see cref="MarkerPresence.Absent"/> (o
+/// <see cref="MarkerPresence.Unknown"/> si su historia no se pudo leer) a cada
+/// <see cref="PatchKey"/> ya descubierto de su <c>workflowType</c> para el cual esa ejecución no
+/// trajo marker propio — no solo a las ejecuciones sin ningún marker de ningún patch. Así un
+/// <c>workflowType</c> con varios patches activos a la vez puede seguir infiriendo que uno de
+/// ellos ya está limpio, aunque los demás sigan emitiendo su marker.
+/// </remarks>
 public sealed class PatchDiscoveryService : IPatchDiscovery
 {
     private readonly IExecutionSource _source;
@@ -31,15 +39,17 @@ public sealed class PatchDiscoveryService : IPatchDiscovery
         // Un snapshot por (PatchKey, ejecución). runId identifica la ejecución dentro del patch.
         var byKey = new Dictionary<PatchKey, Dictionary<string, ExecutionSnapshot>>();
 
-        // Ejecuciones sin patch propio (ni atributo ni markers): se atribuyen después, como
-        // Absent (pre-patch) o Unknown (historia no leída), a cada patch de su mismo workflowType.
-        var floating = new List<(ExecutionListItem Item, MarkerPresence Presence)>();
+        // Toda ejecución del barrido, con los patchId que trajo marker propio (por atributo o
+        // historia) y si su historia se pudo leer completa. Sirve para la segunda pasada, que
+        // atribuye Absent/Unknown a los patches hermanos que esa ejecución no cubrió.
+        var allItems = new List<(ExecutionListItem Item, HashSet<string> OwnPatchIds, bool HistoryReadable)>();
 
         var historiesRead = 0;
 
         foreach (var item in page.Items)
         {
             var attributePatchIds = PatchIdsFromAttribute(item.ChangeVersions);
+            var ownPatchIds = new HashSet<string>(StringComparer.Ordinal);
 
             IReadOnlyList<PatchMarker> markers;
             bool historyReadable;
@@ -63,6 +73,7 @@ public sealed class PatchDiscoveryService : IPatchDiscovery
                         ? MarkerPresence.PresentDeprecated
                         : MarkerPresence.Present;
                     Put(byKey, Key(item, marker.PatchId), item, presence);
+                    ownPatchIds.Add(marker.PatchId);
                 }
             }
             else if (attributePatchIds.Count > 0)
@@ -72,15 +83,14 @@ public sealed class PatchDiscoveryService : IPatchDiscovery
                 foreach (var patchId in attributePatchIds)
                 {
                     Put(byKey, Key(item, patchId), item, MarkerPresence.Present);
+                    ownPatchIds.Add(patchId);
                 }
             }
-            else
-            {
-                floating.Add((item, historyReadable ? MarkerPresence.Absent : MarkerPresence.Unknown));
-            }
+
+            allItems.Add((item, ownPatchIds, historyReadable));
         }
 
-        AttributeFloating(byKey, floating);
+        AttributeAbsence(byKey, allItems);
 
         return byKey
             .Select(kv => new PatchDiscoveryResult(
@@ -127,18 +137,33 @@ public sealed class PatchDiscoveryService : IPatchDiscovery
     private PatchKey Key(ExecutionListItem item, string patchId) =>
         new(_options.Namespace, item.WorkflowType, patchId);
 
-    private static void AttributeFloating(
+    /// <summary>
+    /// Segunda pasada (spec 13): cada ejecución del barrido se atribuye como
+    /// <see cref="MarkerPresence.Absent"/> (o <see cref="MarkerPresence.Unknown"/> si su historia
+    /// no se pudo leer) a todo <see cref="PatchKey"/> ya descubierto de su <c>workflowType</c>
+    /// para el que esa ejecución no aportó marker propio. <c>overwrite: false</c> asegura que un
+    /// marker propio (<c>Present</c>/<c>PresentDeprecated</c>) puesto en la primera pasada nunca
+    /// se pise acá, y el filtro <c>!OwnPatchIds.Contains</c> evita attribuir ausencia al propio
+    /// patch de la ejecución. Corre después de que todas las ejecuciones pasaron por la primera
+    /// pasada, así <c>byKey</c> ya tiene el set completo de patches de este barrido — nunca crea
+    /// un <see cref="PatchKey"/> nuevo por ausencia.
+    /// </summary>
+    private static void AttributeAbsence(
         Dictionary<PatchKey, Dictionary<string, ExecutionSnapshot>> byKey,
-        IReadOnlyList<(ExecutionListItem Item, MarkerPresence Presence)> floating)
+        IReadOnlyList<(ExecutionListItem Item, HashSet<string> OwnPatchIds, bool HistoryReadable)> allItems)
     {
-        if (floating.Count == 0 || byKey.Count == 0)
+        if (byKey.Count == 0)
         {
             return;
         }
 
-        foreach (var (item, presence) in floating)
+        foreach (var (item, ownPatchIds, historyReadable) in allItems)
         {
-            foreach (var key in byKey.Keys.Where(k => k.WorkflowType == item.WorkflowType).ToArray())
+            var presence = historyReadable ? MarkerPresence.Absent : MarkerPresence.Unknown;
+
+            foreach (var key in byKey.Keys
+                .Where(k => k.WorkflowType == item.WorkflowType && !ownPatchIds.Contains(k.PatchId))
+                .ToArray())
             {
                 Put(byKey, key, item, presence, overwrite: false);
             }

@@ -18,6 +18,10 @@ public class PatchDiscoveryServiceTests
     private static PatchDiscoveryResult ForType(IEnumerable<PatchDiscoveryResult> results, string workflowType) =>
         results.Single(r => r.Key.WorkflowType == workflowType);
 
+    private static PatchDiscoveryResult ForPatch(
+        IEnumerable<PatchDiscoveryResult> results, string workflowType, string patchId) =>
+        results.Single(r => r.Key.WorkflowType == workflowType && r.Key.PatchId == patchId);
+
     private static ExecutionSnapshot Only(PatchDiscoveryResult result) =>
         Assert.Single(result.Executions.Snapshots);
 
@@ -218,6 +222,74 @@ public class PatchDiscoveryServiceTests
         Assert.Equal(
             MarkerPresence.Unknown,
             result.Executions.Snapshots.Single(s => s.WorkflowId == "broken").Marker);
+    }
+
+    // ---- Atribución de Absent por patch (spec 13) --------------------------------
+
+    [Fact]
+    public async Task Ejecucion_con_marker_de_otro_patch_se_atribuye_como_Absent_al_patch_sin_su_propio_marker()
+    {
+        // gate-cierre-terminal-v1 (A) sigue activo; patchmonitor-test-v1 (B) ya se quitó del
+        // código. Antes del spec 13, "only-a" no aportaba nada a B porque no era una ejecución
+        // "flotante" (traía marker de A); ahora B la ve como evidencia de ausencia propia.
+        var source = new FakeExecutionSource().Seed(
+            HistoryFixtures.OpenWithMarker("patch-a", deprecated: false, "GateWorkflow").WithWorkflowId("seed-a"),
+            HistoryFixtures.OpenWithMarker("patch-b", deprecated: false, "GateWorkflow").WithWorkflowId("seed-b"),
+            HistoryFixtures.OpenWithMarker("patch-a", deprecated: false, "GateWorkflow").WithWorkflowId("only-a"));
+
+        var results = await Build(source).DiscoverAsync();
+
+        var patchB = ForPatch(results, "GateWorkflow", "patch-b");
+        Assert.Equal(
+            MarkerPresence.Absent,
+            patchB.Executions.Snapshots.Single(s => s.WorkflowId == "only-a").Marker);
+
+        // El propio patch A no se ve a sí mismo como ausente en esa misma ejecución.
+        var patchA = ForPatch(results, "GateWorkflow", "patch-a");
+        Assert.Equal(
+            MarkerPresence.Present,
+            patchA.Executions.Snapshots.Single(s => s.WorkflowId == "only-a").Marker);
+    }
+
+    [Fact]
+    public async Task Historia_no_legible_atribuye_Unknown_a_todos_los_patches_del_workflowType_y_los_trunca()
+    {
+        var source = new FakeExecutionSource().Seed(
+            HistoryFixtures.OpenWithMarker("patch-a", deprecated: false, "GateWorkflow").WithWorkflowId("seed-a"),
+            HistoryFixtures.OpenWithMarker("patch-b", deprecated: false, "GateWorkflow").WithWorkflowId("seed-b"),
+            HistoryFixtures.OpenPrePatch("GateWorkflow").WithWorkflowId("broken").WithBrokenHistory());
+
+        var results = await Build(source).DiscoverAsync();
+
+        var patchA = ForPatch(results, "GateWorkflow", "patch-a");
+        var patchB = ForPatch(results, "GateWorkflow", "patch-b");
+        Assert.Equal(
+            MarkerPresence.Unknown,
+            patchA.Executions.Snapshots.Single(s => s.WorkflowId == "broken").Marker);
+        Assert.Equal(
+            MarkerPresence.Unknown,
+            patchB.Executions.Snapshots.Single(s => s.WorkflowId == "broken").Marker);
+        Assert.True(patchA.Executions.IsTruncated);
+        Assert.True(patchB.Executions.IsTruncated);
+    }
+
+    [Fact]
+    public async Task Dos_workflowTypes_con_varios_patches_cada_uno_no_se_contaminan_entre_si()
+    {
+        var source = new FakeExecutionSource().Seed(
+            HistoryFixtures.OpenWithMarker("patch-a", deprecated: false, "GateWorkflow").WithWorkflowId("gate-a"),
+            HistoryFixtures.OpenWithMarker("patch-b", deprecated: false, "GateWorkflow").WithWorkflowId("gate-b"),
+            HistoryFixtures.OpenWithMarker("patch-c", deprecated: false, "BillingWorkflow").WithWorkflowId("billing-c"));
+
+        var results = await Build(source).DiscoverAsync();
+
+        Assert.Equal(3, results.Count);
+        // Dentro de GateWorkflow, cada patch ve la ejecución del otro como Absent (spec 13):
+        // patch-a tiene sus 2 ejecuciones (propia + la de patch-b, atribuida como Absent).
+        Assert.Equal(2, ForPatch(results, "GateWorkflow", "patch-a").Executions.Snapshots.Count);
+        Assert.Equal(2, ForPatch(results, "GateWorkflow", "patch-b").Executions.Snapshots.Count);
+        // BillingWorkflow es otro workflowType: ninguna ejecución de GateWorkflow lo contamina.
+        Assert.Single(ForPatch(results, "BillingWorkflow", "patch-c").Executions.Snapshots);
     }
 
     // ---- Topes e IsTruncated --------------------------------------------------
