@@ -179,7 +179,7 @@ Derivada de las 6 specs de `ReleaseOrderDemo`. Cada `/spec` que se cree debe res
 | 10 | `self-versioning-and-drain` | Aplicar el ciclo `Patched → DeprecatePatch → limpio` al propio `MonitorWorkflow` — **diferido, ver nota abajo** | 09 |
 | 11 | `monitor-web-mvp` | Dashboard React que consume `MonitorApi` para observar patches y controlar el Schedule sin Swagger | 09 |
 | 12 | `single-cluster-namespace-isolation` | Apoyarse en un cluster de Temporal existente en vez de levantar el suyo propio, aislando el estado por namespace (`monitor` vs. `default`) | 09 |
-| 13 | *(candidata, sin nombre de rama todavía)* | Evaluar `Absent` (fase Clean) por `patchId` individual en vez de por bucket "floating" del workflow type entero, para soportar patches concurrentes — ver `docs/limitacion-clean-patches-concurrentes.md` | 03 |
+| 13 | `per-patch-absent-attribution` | Evaluar `Absent` (fase Clean) por `patchId` individual en vez de por bucket "floating" del workflow type entero, para soportar patches concurrentes, con mitigación de falso Clean — ver `docs/limitacion-clean-patches-concurrentes.md` | 03, 04 |
 
 ### Por qué van en ese orden
 
