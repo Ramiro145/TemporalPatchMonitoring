@@ -90,7 +90,7 @@ excepción) de que el monitor se va a observar a sí mismo.
 
 ```powershell
 dotnet build PatchMonitor.sln
-dotnet test  PatchMonitor.sln        # 268 tests, sin Docker
+dotnet test  PatchMonitor.sln        # 292 tests, sin Docker
 
 # stack del monitor, desde docker/
 docker compose build

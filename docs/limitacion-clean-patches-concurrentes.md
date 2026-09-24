@@ -1,7 +1,8 @@
 # Limitación conocida: fase "Clean" no se infiere con patches concurrentes en el mismo workflow type
 
-**Estado:** hallazgo confirmado en código, sin spec asociada todavía. Para referencia al planificar
-una spec de arreglo (candidata a spec 13, siguiendo la numeración de `Construction.md`).
+**Estado:** resuelto por `specs/13-per-patch-absent-attribution.md`. Se deja este documento como
+referencia histórica del hallazgo y de la reproducción original; el detalle de la solución
+(atribución de `Absent` por patch + mitigación del falso Clean) está en esa spec.
 
 ## Resumen
 
@@ -57,19 +58,21 @@ todavía contra un cluster real: varios patches simultáneos..."*) — este docu
 validarlo, el comportamiento no es solo "sin probar" sino un bloqueo estructural del diseño actual
 de Tier 2.
 
-## Posibles caminos de arreglo (sin decidir todavía)
+## Camino de arreglo elegido
 
-- Cambiar `Absent` para que se evalúe **por patch** (ausencia del marker específico de ESE
-  `patchId` en la historia) en vez de por bucket "floating" de todo el workflow type sin ningún
-  marker. Requiere revisar si hay una razón de diseño detrás de la decisión actual (spec 03) antes
-  de tocarla — podría existir para evitar falsos positivos cuando dos patches se solapan en el
-  tiempo de introducción.
-- Documentar la limitación explícitamente en el README junto a los demás "Límites conocidos", sin
-  cambiar el comportamiento, dejando claro que fase 3 con patches concurrentes requiere override.
+Se optó por cambiar `Absent` para que se evalúe **por patch** (ausencia del marker específico de
+ESE `patchId` en la historia) en vez de por bucket "floating" de todo el workflow type sin ningún
+marker — implementado en `specs/13-per-patch-absent-attribution.md`.
+
+El riesgo anticipado ("falsos positivos cuando dos patches se solapan en el tiempo de introducción",
+generalizado en esa spec como "falso Clean": un patch en una rama de código poco ejercida podría
+parecer limpio con poca evidencia) se mitigó con dos capas en `PhaseResolver`: exigir haber pasado
+por fase Deprecated, y un mínimo de ejecuciones limpias que se ajusta según qué tan seguido aparece
+el marker en la ventana observada (`PHASE_CLEAN_CONFIDENCE`). El límite residual que ninguna
+estrategia basada en Event History puede cubrir — un patch cuyo código condicional nunca se ejerció
+en toda la ventana — quedó documentado en el README, con el override manual como salida.
 
 ## Pendiente
 
-- Decidir si esto amerita una spec nueva (13) o si alcanza con documentarlo en el README como
-  limitación conocida.
-- Si se resuelve con cambio de diseño, definir el criterio para "limpio por patch" sin introducir
-  falsos positivos cuando dos patches nuevos se introdujeron cerca en el tiempo.
+Nada pendiente sobre este hallazgo puntual; ver `specs/13-per-patch-absent-attribution.md` para el
+detalle de la implementación y sus criterios de aceptación.

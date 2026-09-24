@@ -85,6 +85,9 @@ services:
       # Resolución de fase (spec 04). Horas que una ejecución sin marker debe superar al
       # último marker para leerse como fase 3 (código limpio).
       - PHASE_CLEAN_GRACE_HOURS=24
+      # Confianza de la evidencia mínima de Clean por patch (spec 13); cuanto más rara es la
+      # aparición del marker en la ventana, más ejecuciones limpias exige antes de confirmar.
+      - PHASE_CLEAN_CONFIDENCE=0.95
       # Estado durable en entity workflows (spec 05). Assessments antes de Continue-As-New y
       # tope del ring buffer de cambios que sobrevive a ese salto.
       - PATCH_STATE_CAN_THRESHOLD=500

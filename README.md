@@ -167,14 +167,21 @@ tienen patches (ver [Límites conocidos](#límites-conocidos)).
 ventana `DISCOVERY_LOOKBACK_DAYS`. Nivel 1: lee el search attribute `TemporalChangeVersion` que
 Temporal escribe al llamar `Patched`. Nivel 2: lee la Event History de cada ejecución buscando el
 marker `core_patch`, que es lo único que distingue fase 1 de fase 2 (el flag `deprecated`).
-Las ejecuciones sin marker se atribuyen como *pre-patch* a los patches de su mismo workflow type.
+Una ejecución que no trae el marker propio de un patch se le atribuye como *pre-patch* a ese patch
+puntual — **por patch, no por workflow type** (spec 13): un workflow con varios patches activos a
+la vez puede seguir infiriendo que uno de ellos ya está limpio, aunque los demás sigan emitiendo su
+propio marker.
 
 **2. Resolución de fase.** Con los markers encontrados:
 
 - marker más reciente sin deprecar → **Coexistence**
 - marker más reciente deprecado → **Deprecated**
-- ninguna ejecución abierta con marker **y** una ejecución sin marker que arrancó más de
-  `PHASE_CLEAN_GRACE_HOURS` después del último marker → **Clean**
+- ninguna ejecución abierta con marker, al menos un marker deprecado en la ventana, **y** suficientes
+  ejecuciones sin marker arrancadas después de `PHASE_CLEAN_GRACE_HOURS` desde el último marker →
+  **Clean**. Cuántas ejecuciones limpias alcanzan se ajusta solo: cuanto más rara es la aparición
+  del marker en la ventana observada, más evidencia pide antes de confirmar Clean, con la confianza
+  de `PHASE_CLEAN_CONFIDENCE` (spec 13, mitiga el "falso Clean" de un patch en una rama de código
+  poco ejercida).
 - sin evidencia → **Unknown**
 
 Un override manual vigente (ver API) gana siempre sobre la fase inferida.
@@ -301,6 +308,7 @@ Todas las variables son opcionales; un valor ausente, no numérico o no positivo
 | `DISCOVERY_MAX_HISTORIES` | `200` | Tope de Event Histories leídas por corrida |
 | `PHASE_CLEAN_GRACE_HOURS` | `24` | Margen para inferir fase 3 |
 | `PHASE_CLEAN_GRACE_MINUTES` | — | Si está y es positiva, reemplaza a la de horas (pruebas) |
+| `PHASE_CLEAN_CONFIDENCE` | `0.95` | Confianza exigida a la evidencia mínima de Clean (spec 13); valor fuera de `(0, 1)` cae al default |
 | `MONITOR_SCHEDULE_ID` | `patch-monitor-schedule` | Id del Schedule (worker y API deben coincidir) |
 | `MONITOR_INTERVAL_MINUTES` | `5` | Cadencia del Schedule |
 | `MONITOR_CATCHUP_WINDOW_MINUTES` | `10` | Ventana para recuperar ticks perdidos |
@@ -340,7 +348,7 @@ Construction.md  Hoja de ruta, decisiones cerradas y criterio de "listo".
 
 ```powershell
 dotnet build PatchMonitor.sln
-dotnet test  PatchMonitor.sln     # 268 tests, sin Docker
+dotnet test  PatchMonitor.sln     # 292 tests, sin Docker
 ```
 
 La primera corrida de tests descarga el test-server de Temporal (una vez; queda cacheado).
@@ -374,10 +382,10 @@ Cero cambios de código en el monitor para apuntarlo ahí. El procedimiento est�
   no filtra por workflow type. Ajustá `DISCOVERY_*` antes de confiar en el resultado.
 - **Convención de marker `core_patch`**: la emiten los SDKs basados en sdk-core (como el de .NET).
   Con otro SDK, verificá la convención antes.
-- **Fase `Clean` no se infiere con patches concurrentes en el mismo workflow type.** Si un
-  workflow tiene más de un patch activo a la vez, ninguno llega a fase 3 por inferencia automática
-  aunque su código individual ya esté limpio; requiere override manual. Confirmado en
-  `docs/limitacion-clean-patches-concurrentes.md` (candidata a spec 13).
+- **Un patch cuyo `Workflow.Patched` vive en una rama de código que la ventana de discovery nunca
+  ejerció no puede distinguirse de "el código se quitó".** Ninguna estrategia basada solo en Event
+  History lo resuelve (spec 13, límite residual tras mitigar el falso Clean con
+  `PHASE_CLEAN_CONFIDENCE`); el override manual es la salida.
 - Sin validar todavía contra un cluster real: el webhook contra un endpoint real y carga sostenida
   de días.
 - El auto-versionado del propio monitor (spec 10) está diferido.

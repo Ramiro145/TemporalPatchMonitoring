@@ -8,4 +8,5 @@ services:
   patch-monitor-worker:
     environment:
       - PHASE_CLEAN_GRACE_MINUTES=3
+      - PHASE_CLEAN_CONFIDENCE=0.95
       - DISCOVERY_LOOKBACK_DAYS=1
