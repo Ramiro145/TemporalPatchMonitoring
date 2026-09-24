@@ -1,6 +1,6 @@
 # 13 - Atribución de `Absent` por patch
 
-**Estado:** Borrador
+**Estado:** Aprobado
 **Depende de:** [03-patch-discovery-two-tier.md](03-patch-discovery-two-tier.md), [04-current-phase-resolution.md](04-current-phase-resolution.md)
 **Fecha:** 2026-09-24
 
