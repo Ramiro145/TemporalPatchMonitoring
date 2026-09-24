@@ -374,8 +374,12 @@ Cero cambios de código en el monitor para apuntarlo ahí. El procedimiento est�
   no filtra por workflow type. Ajustá `DISCOVERY_*` antes de confiar en el resultado.
 - **Convención de marker `core_patch`**: la emiten los SDKs basados en sdk-core (como el de .NET).
   Con otro SDK, verificá la convención antes.
-- Sin validar todavía contra un cluster real: varios patches simultáneos, el webhook contra un
-  endpoint real, y carga sostenida de días.
+- **Fase `Clean` no se infiere con patches concurrentes en el mismo workflow type.** Si un
+  workflow tiene más de un patch activo a la vez, ninguno llega a fase 3 por inferencia automática
+  aunque su código individual ya esté limpio; requiere override manual. Confirmado en
+  `docs/limitacion-clean-patches-concurrentes.md` (candidata a spec 13).
+- Sin validar todavía contra un cluster real: el webhook contra un endpoint real y carga sostenida
+  de días.
 - El auto-versionado del propio monitor (spec 10) está diferido.
 
 Detalle en `specs/09-multi-target-e2e-validation.md`, sección "Límites conocidos".
