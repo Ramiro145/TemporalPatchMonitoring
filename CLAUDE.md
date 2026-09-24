@@ -30,11 +30,14 @@ cambios de arquitectura.
 
 ## Estado actual
 
-- Specs **01 a 09, 11 y 12 implementados** (`specs/`). El spec 09 validó el monitor end-to-end
+- Specs **01 a 09, 11, 12 y 13 implementados** (`specs/`). El spec 09 validó el monitor end-to-end
   contra el `ReleaseOrderDemo` real (evidencia en `docs/e2e/evidence/`). El spec 11 agregó el
   dashboard web (`web/`, ver `## Frontend` más abajo). El spec 12 movió el monitor a apoyarse en un
   cluster de Temporal existente, aislado por namespace (`monitor` propio / `default` observado) en
-  vez de levantar su propio cluster.
+  vez de levantar su propio cluster. El spec 13 corrigió que la fase Clean no se pudiera inferir con
+  varios patches activos en el mismo workflow type (atribución de `Absent` por patch, con mitigación
+  del "falso Clean" vía `PHASE_CLEAN_CONFIDENCE`); validado en vivo contra `ssy-yardflow`, ver
+  `specs/13-per-patch-absent-attribution.md`.
 - **Spec 10 (auto-versionado del `MonitorWorkflow`) diferido**, no descartado: la prioridad es
   probar el monitor contra un segundo proyecto real. Ver `Construction.md` §7 ítem 10 y §8.
 - Límites conocidos para reusarlo en otros proyectos: `specs/09-multi-target-e2e-validation.md`,

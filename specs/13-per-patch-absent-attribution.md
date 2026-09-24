@@ -1,6 +1,6 @@
 # 13 - Atribución de `Absent` por patch
 
-**Estado:** Aprobado
+**Estado:** Implementado
 **Depende de:** [03-patch-discovery-two-tier.md](03-patch-discovery-two-tier.md), [04-current-phase-resolution.md](04-current-phase-resolution.md)
 **Fecha:** 2026-09-24
 
@@ -160,21 +160,52 @@ public sealed record PhaseOptions(TimeSpan CleanGrace, double CleanConfidence)
    evidencia (timestamps, respuesta de la API) en este spec antes de marcar los criterios de
    aceptación.
 
+### Evidencia de la verificación end-to-end (2026-09-24)
+
+La evidencia original del hallazgo (ejecuciones de `_1001_` del 2026-09-22) ya había expirado de la
+Visibility de Temporal por retención — `temporal workflow list` no devolvía ninguna ejecución de
+`_1001_TruckScrapPurchaseWorkflow`. Se regeneró el ciclo completo contra el cluster local de
+`ssy-yardflow` (`docker-compose.yml` + overlay de PatchMonitor con `PHASE_CLEAN_GRACE_MINUTES=1`),
+agregando temporalmente el patch de prueba en `_1001_TruckScrapPurchaseWorkflow.ExecuteAsync` (sin
+commitear, revertido al terminar — confirmado con `git status`/`git diff` limpio sobre ese archivo):
+
+| Paso | Acción | Fase resultante | `source` |
+| --- | --- | --- | --- |
+| 1 | `Workflow.Patched("patchmonitor-test-v1")` condicional, ejecución `patchmonitor-test-phase1-run1` | Coexistence | Inferred (`"marker más reciente sin deprecar"`) |
+| 2 | `Workflow.DeprecatePatch("patchmonitor-test-v1")` sin condicional, ejecución `patchmonitor-test-phase2-run1` | Deprecated | Inferred (`"marker más reciente deprecado"`) |
+| 3 | Patch quitado del código, ejecución `patchmonitor-test-phase3-run1`, esperado el grace de 1 min | **Clean** | **Inferred** (`"sin marker desde 2026-09-24T17:41:54.74Z; código limpio"`) |
+
+Respuesta de `GET /patches/default/_1001_TruckScrapPurchaseWorkflow/patchmonitor-test-v1` en el paso
+3 (`revision: 6`, `lastChangedAt: 2026-09-24T17:44:37.57Z`):
+
+```json
+{"summary":{"phase":3,"source":0,"outcome":null,"nextPhase":null,"hasOverride":false},
+ "phaseReason":"sin marker desde 2026-09-24T17:41:54.7445920+00:00; código limpio"}
+```
+
+`gate-cierre-terminal-v1` (el patch permanente concurrente en el mismo `workflowType`) se consultó en
+paralelo y no se vio afectado por el cambio — siguió en su última fase observada, sin ningún
+`Reason` ni `Revision` alterados por la inferencia de `patchmonitor-test-v1`. Las tres ejecuciones
+sintéticas se cerraron (dos por fallo al no encontrar backends reales, una terminada manualmente) sin
+dejar nada abierto.
+
 ## Criterios de aceptación
 
-- [ ] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
-- [ ] `dotnet test PatchMonitor.sln` pasa en verde, sin Docker.
-- [ ] Los tests nuevos de los pasos 1 a 4 existen y pasan, incluyendo los puntos de referencia de la
+- [x] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
+- [x] `dotnet test PatchMonitor.sln` pasa en verde, sin Docker. (292/292; el único fallo intermedio
+      fue el flaky conocido de `TemporalPatchStateStoreTests` bajo carga paralela, documentado en
+      `CLAUDE.md`, reproducido aislado sin cambios.)
+- [x] Los tests nuevos de los pasos 1 a 4 existen y pasan, incluyendo los puntos de referencia de la
       Capa 2 (`p=1→N=1`, `p=0.5→N=5`, `p=0.1→N=29`).
-- [ ] Contra `ssy-yardflow`, con dos patches activos en el mismo `workflowType`
+- [x] Contra `ssy-yardflow`, con dos patches activos en el mismo `workflowType`
       (`gate-cierre-terminal-v1` activo, `patchmonitor-test-v1` ya limpio del código),
       `patchmonitor-test-v1` llega a fase Clean con `PhaseSource.Inferred`, sin usar el override
-      manual.
-- [ ] `README.md` ya no lista la limitación de patches concurrentes entre los "Límites conocidos",
+      manual. Ver "Evidencia de la verificación end-to-end" arriba.
+- [x] `README.md` ya no lista la limitación de patches concurrentes entre los "Límites conocidos",
       documenta `PHASE_CLEAN_CONFIDENCE` y deja anotado el límite residual del `if` nunca ejecutado.
-- [ ] `docs/limitacion-clean-patches-concurrentes.md` tiene `**Estado:**` actualizado a resuelto por
+- [x] `docs/limitacion-clean-patches-concurrentes.md` tiene `**Estado:**` actualizado a resuelto por
       este spec.
-- [ ] `PHASE_CLEAN_CONFIDENCE` está declarada en `docker-compose.yml` y `docker-compose.e2e.yml`.
+- [x] `PHASE_CLEAN_CONFIDENCE` está declarada en `docker-compose.yml` y `docker-compose.e2e.yml`.
 
 ## Decisiones
 
