@@ -24,7 +24,7 @@ public class PatchStateActivities
 
     [Activity]
     public Task<PatchState> RecordAssessmentAsync(PatchAssessmentInput input) =>
-        _store.RecordAssessmentAsync(input);
+        QueryFailureGuard.RunAsync(() => _store.RecordAssessmentAsync(input));
 
     /// <summary>
     /// Trae los overrides vigentes de todos los entity workflows y sincroniza con ellos el
@@ -57,7 +57,8 @@ public class PatchStateActivities
     }
 
     [Activity]
-    public Task<PatchState?> GetPatchStateAsync(PatchKey key) => _store.GetStateAsync(key);
+    public Task<PatchState?> GetPatchStateAsync(PatchKey key) =>
+        QueryFailureGuard.RunAsync(() => _store.GetStateAsync(key));
 
     [Activity]
     public Task<IReadOnlyList<PatchKey>> ListPatchesAsync() => _store.ListAsync();

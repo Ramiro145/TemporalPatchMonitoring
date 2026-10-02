@@ -118,6 +118,48 @@ public class PatchEndpointsTests
     }
 
     [Fact]
+    public async Task GetAsync_de_un_entity_ilegible_devuelve_503_con_el_motivo()
+    {
+        var store = new FakePatchStateStore();
+        store.FailGetWith(
+            KeyA,
+            new Temporalio.Exceptions.WorkflowQueryFailedException("[TMPRL1100] Nondeterminism error: simulado"));
+
+        var result = await PatchEndpoints.GetAsync(
+            KeyA.Namespace, KeyA.WorkflowType, KeyA.PatchId, store);
+
+        var problem = Assert.IsType<ProblemHttpResult>(result.Result);
+        Assert.Equal(503, problem.StatusCode);
+        Assert.Contains("Nondeterminism", problem.ProblemDetails.Detail);
+        Assert.Contains(KeyA.PatchId, problem.ProblemDetails.Detail);
+    }
+
+    [Fact]
+    public async Task SetOverride_sobre_un_entity_ilegible_devuelve_503_con_el_motivo()
+    {
+        var store = new FakePatchStateStore();
+        store.FailGetFor(KeyA);
+        var request = new SetOverrideRequest(PatchPhase.Deprecated, "operador", null);
+
+        var result = await PatchEndpoints.SetOverrideAsync(
+            KeyA.Namespace, KeyA.WorkflowType, KeyA.PatchId, request, force: null, store, Options());
+
+        var problem = Assert.IsType<ProblemHttpResult>(result.Result);
+        Assert.Equal(503, problem.StatusCode);
+        Assert.Contains("fallo simulado", problem.ProblemDetails.Detail);
+    }
+
+    [Fact]
+    public async Task GetAsync_propaga_la_cancelacion_en_vez_de_convertirla_en_503()
+    {
+        var store = new FakePatchStateStore();
+        store.FailGetWith(KeyA, new OperationCanceledException());
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => PatchEndpoints.GetAsync(
+            KeyA.Namespace, KeyA.WorkflowType, KeyA.PatchId, store));
+    }
+
+    [Fact]
     public async Task SetOverride_con_Phase_Unknown_devuelve_BadRequest()
     {
         var store = new FakePatchStateStore();

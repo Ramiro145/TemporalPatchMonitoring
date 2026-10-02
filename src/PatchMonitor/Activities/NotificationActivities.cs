@@ -30,7 +30,7 @@ public class NotificationActivities
     [Activity]
     public async Task<bool> NotifyVerdictChangeAsync(VerdictChangeNotification n)
     {
-        var state = await _store.GetStateAsync(n.Key).ConfigureAwait(false);
+        var state = await QueryFailureGuard.RunAsync(() => _store.GetStateAsync(n.Key)).ConfigureAwait(false);
         if (state is not null && state.NotifiedRevision >= n.Revision)
         {
             return false;

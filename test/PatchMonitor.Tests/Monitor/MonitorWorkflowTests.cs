@@ -139,6 +139,25 @@ public class MonitorWorkflowTests
     }
 
     [Fact]
+    public async Task Un_patch_con_replay_roto_no_se_reintenta_y_la_pasada_sigue_con_los_demas()
+    {
+        var source = new FakeExecutionSource().Seed(
+            HistoryFixtures.OpenWithAttribute("core-patch", "OrderWorkflow"),
+            HistoryFixtures.OpenWithAttribute("core-patch", "ShippingWorkflow"));
+        var store = new FakePatchStateStore();
+        store.FailGetWith(
+            new Contracts.Domain.PatchKey("default", "OrderWorkflow", "core-patch"),
+            new Temporalio.Exceptions.WorkflowQueryFailedException("[TMPRL1100] Nondeterminism error: simulado"));
+
+        var summary = await RunAsync(source, store);
+
+        Assert.Equal(2, summary.PatchesDiscovered);
+        Assert.Equal(1, summary.PatchesAssessed);
+        var error = Assert.Single(summary.Errors);
+        Assert.Contains("Nondeterminism", error);
+    }
+
+    [Fact]
     public async Task MaxPatchesPerRun_acota_los_assessments_sin_afectar_lo_descubierto()
     {
         var source = new FakeExecutionSource().Seed(

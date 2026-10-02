@@ -43,18 +43,38 @@ public static class PatchEndpoints
         return TypedResults.Ok(new PatchListResponse(summaries.Length, truncated, summaries));
     }
 
-    public static async Task<Results<Ok<PatchDetailResponse>, NotFound>> GetAsync(
+    public static async Task<Results<Ok<PatchDetailResponse>, NotFound, ProblemHttpResult>> GetAsync(
         string ns, string type, string patchId, IPatchStateStore store, CancellationToken ct = default)
     {
         var key = new PatchKey(ns, type, patchId);
-        var state = await store.GetStateAsync(key, ct).ConfigureAwait(false);
+
+        PatchState? state;
+        try
+        {
+            state = await store.GetStateAsync(key, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return Unreadable(key, ex);
+        }
 
         return state is null
             ? TypedResults.NotFound()
             : TypedResults.Ok(PatchDetailResponse.FromState(state));
     }
 
-    public static async Task<Results<Ok<PatchDetailResponse>, BadRequest<string>, NotFound, Conflict<string>>> SetOverrideAsync(
+    /// <summary>
+    /// Spec 17: un entity que no se puede leer (p. ej. replay roto) es un fallo del backend, no
+    /// un 500 sin cuerpo: 503 con el motivo en <c>detail</c>, como el <c>Error</c> que el listado
+    /// ya expone en <see cref="PatchSummaryResponse.Unreadable"/>.
+    /// </summary>
+    private static ProblemHttpResult Unreadable(PatchKey key, Exception ex) =>
+        TypedResults.Problem(
+            title: "El entity del patch no se pudo leer.",
+            detail: $"{key}: {ex.Message}",
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+
+    public static async Task<Results<Ok<PatchDetailResponse>, BadRequest<string>, NotFound, Conflict<string>, ProblemHttpResult>> SetOverrideAsync(
         string ns, string type, string patchId, SetOverrideRequest request, bool? force,
         IPatchStateStore store, ApiOptions options, CancellationToken ct = default)
     {
@@ -71,7 +91,17 @@ public static class PatchEndpoints
         }
 
         var key = new PatchKey(ns, type, patchId);
-        var state = await store.GetStateAsync(key, ct).ConfigureAwait(false);
+
+        PatchState? state;
+        try
+        {
+            state = await store.GetStateAsync(key, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return Unreadable(key, ex);
+        }
+
         if (state is null)
         {
             return TypedResults.NotFound();
@@ -89,8 +119,15 @@ public static class PatchEndpoints
             key, request.Phase, request.DeclaredBy, declaredAt,
             request.ExpiresAt ?? declaredAt + options.OverrideDefaultTtl);
 
-        var updated = await store.SetOverrideAsync(ov, ct).ConfigureAwait(false);
-        return TypedResults.Ok(PatchDetailResponse.FromState(updated));
+        try
+        {
+            var updated = await store.SetOverrideAsync(ov, ct).ConfigureAwait(false);
+            return TypedResults.Ok(PatchDetailResponse.FromState(updated));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return Unreadable(key, ex);
+        }
     }
 
     public static async Task<Results<Ok<PatchDetailResponse>, NotFound>> ClearOverrideAsync(

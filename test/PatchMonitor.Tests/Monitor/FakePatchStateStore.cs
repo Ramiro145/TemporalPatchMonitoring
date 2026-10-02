@@ -19,6 +19,7 @@ public sealed class FakePatchStateStore : IPatchStateStore
     private readonly HashSet<PatchKey> _keys = new();
     private readonly HashSet<PatchKey> _failing = new();
     private readonly HashSet<PatchKey> _failingGet = new();
+    private readonly Dictionary<PatchKey, Exception> _failingGetWith = new();
 
     /// <summary>A partir de ahora, <see cref="RecordAssessmentAsync"/> lanza para esta clave.</summary>
     public void FailRecordFor(PatchKey key) => _failing.Add(key);
@@ -30,6 +31,16 @@ public sealed class FakePatchStateStore : IPatchStateStore
     public void FailGetFor(PatchKey key)
     {
         _failingGet.Add(key);
+        _keys.Add(key);
+    }
+
+    /// <summary>
+    /// A partir de ahora, <see cref="GetStateAsync"/> lanza <paramref name="error"/> para esta
+    /// clave (p. ej. un <c>WorkflowQueryFailedException</c> por replay roto, spec 17).
+    /// </summary>
+    public void FailGetWith(PatchKey key, Exception error)
+    {
+        _failingGetWith[key] = error;
         _keys.Add(key);
     }
 
@@ -83,6 +94,11 @@ public sealed class FakePatchStateStore : IPatchStateStore
 
     public Task<PatchState?> GetStateAsync(PatchKey key, CancellationToken ct = default)
     {
+        if (_failingGetWith.TryGetValue(key, out var error))
+        {
+            throw error;
+        }
+
         if (_failingGet.Contains(key))
         {
             throw new InvalidOperationException($"fallo simulado leyendo {key}");
