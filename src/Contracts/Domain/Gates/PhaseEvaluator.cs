@@ -2,9 +2,10 @@ namespace Contracts.Domain.Gates;
 
 /// <summary>
 /// Elige el <see cref="IPhaseGate"/> que corresponde a la fase actual de un patch y le
-/// delega la evaluación. Resuelve por su cuenta los dos casos que no tienen gate:
-/// <see cref="PatchPhase.Unknown"/> (fase sin resolver) y <see cref="PatchPhase.Clean"/>
-/// (fase final).
+/// delega la evaluación. Solo existe para las fases de transición
+/// (<see cref="PatchPhase.Coexistence"/> y <see cref="PatchPhase.Deprecated"/>):
+/// <see cref="PatchPhase.Unknown"/> y <see cref="PatchPhase.Clean"/> no tienen veredicto
+/// (<c>Verdict = null</c> en <c>PhaseActivities.AssessPatch</c>) y lanzan si se las pasa.
 /// </summary>
 public sealed class PhaseEvaluator
 {
@@ -20,8 +21,9 @@ public sealed class PhaseEvaluator
     /// puede avanzar a la fase siguiente.
     /// </summary>
     /// <exception cref="InvalidOperationException">
-    /// No hay ningún <see cref="IPhaseGate"/> registrado para <paramref name="currentPhase"/>
-    /// (error de cableado de DI, no de datos).
+    /// <paramref name="currentPhase"/> es <see cref="PatchPhase.Unknown"/> o
+    /// <see cref="PatchPhase.Clean"/>, o no hay ningún <see cref="IPhaseGate"/> registrado para
+    /// ella (error de cableado de DI, no de datos).
     /// </exception>
     public PhaseVerdict Evaluate(PatchKey key, PatchPhase currentPhase, ExecutionSnapshotSet executions)
     {
@@ -30,20 +32,9 @@ public sealed class PhaseEvaluator
         switch (currentPhase)
         {
             case PatchPhase.Unknown:
-                return PhaseVerdict.Inconclusive(
-                    currentPhase,
-                    nextPhase: null,
-                    "fase actual no resuelta",
-                    evaluatedAt);
-
             case PatchPhase.Clean:
-                return PhaseVerdict.Blocked(
-                    currentPhase,
-                    nextPhase: null,
-                    blockingExecutionCount: 0,
-                    Array.Empty<string>(),
-                    "fase final: no hay transición siguiente",
-                    evaluatedAt);
+                throw new InvalidOperationException(
+                    $"La fase {currentPhase} no tiene transición siguiente: no se evalúa (veredicto null).");
 
             default:
                 if (!_gatesByFrom.TryGetValue(currentPhase, out var gate))

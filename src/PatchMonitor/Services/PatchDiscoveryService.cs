@@ -78,11 +78,15 @@ public sealed class PatchDiscoveryService : IPatchDiscovery
             }
             else if (attributePatchIds.Count > 0)
             {
-                // Tier 1: el atributo declara el patch pero la historia no aportó markers
-                // (vacía o no legible). Se confía en el atributo ⇒ Present, nunca Unknown.
+                // Tier 1: el atributo declara el patch pero la historia no aportó markers.
+                // Historia legible y vacía ⇒ Present (se confía en el atributo). Historia no
+                // legible (excepción o tope MaxHistories) ⇒ Unknown: el patch se descubre pero
+                // el set sale truncado, así los gates dan Inconclusive y la fase inferida no
+                // retrocede de Deprecated a Coexistence por no haber podido mirar (spec 16, B-3).
+                var presence = historyReadable ? MarkerPresence.Present : MarkerPresence.Unknown;
                 foreach (var patchId in attributePatchIds)
                 {
-                    Put(byKey, Key(item, patchId), item, MarkerPresence.Present);
+                    Put(byKey, Key(item, patchId), item, presence);
                     ownPatchIds.Add(patchId);
                 }
             }
@@ -191,6 +195,11 @@ public sealed class PatchDiscoveryService : IPatchDiscovery
             item.WorkflowId, item.RunId, item.WorkflowType, item.Status, presence, item.StartTime);
     }
 
+    /// <summary>
+    /// Cada entrada de <c>TemporalChangeVersion</c> es el <c>patchId</c> crudo, igual que el
+    /// <c>id</c> del marker <c>core_patch</c> (Tier 2): no lleva sufijo de versión, así que no
+    /// se recorta nada (un patch <c>rot-1</c> es <c>rot-1</c>). Solo se descartan vacías y repetidas.
+    /// </summary>
     private static IReadOnlyList<string> PatchIdsFromAttribute(IReadOnlyList<string> changeVersions)
     {
         if (changeVersions.Count == 0)
@@ -200,9 +209,8 @@ public sealed class PatchDiscoveryService : IPatchDiscovery
 
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var result = new List<string>();
-        foreach (var entry in changeVersions)
+        foreach (var patchId in changeVersions)
         {
-            var patchId = ParsePatchId(entry);
             if (patchId.Length > 0 && seen.Add(patchId))
             {
                 result.Add(patchId);
@@ -210,29 +218,5 @@ public sealed class PatchDiscoveryService : IPatchDiscovery
         }
 
         return result;
-    }
-
-    /// <summary>
-    /// Una entrada de <c>TemporalChangeVersion</c> es <c>&lt;patchId&gt;-&lt;version&gt;</c>.
-    /// El patchId puede llevar guiones, así que se quita solo el sufijo <c>-&lt;dígitos&gt;</c>
-    /// final. Sin ese sufijo, la entrada entera es el patchId.
-    /// </summary>
-    private static string ParsePatchId(string entry)
-    {
-        var dash = entry.LastIndexOf('-');
-        if (dash <= 0 || dash == entry.Length - 1)
-        {
-            return entry;
-        }
-
-        foreach (var c in entry.AsSpan(dash + 1))
-        {
-            if (!char.IsDigit(c))
-            {
-                return entry;
-            }
-        }
-
-        return entry[..dash];
     }
 }

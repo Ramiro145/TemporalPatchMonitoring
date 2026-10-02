@@ -68,30 +68,45 @@ public class PatchDiscoveryServiceTests
     }
 
     [Fact]
-    public async Task Tier1_sin_markers_legibles_igual_descubre_el_patch_como_Present()
+    public async Task Tier1_con_historia_ilegible_descubre_el_patch_como_Unknown_y_trunca()
     {
-        // La historia se rompe, pero el atributo alcanza para no perder el patch.
+        // La historia se rompe: el atributo alcanza para no perder el patch, pero no para
+        // afirmar presencia (spec 16, B-3); el set queda truncado y los gates dan Inconclusive.
         var source = new FakeExecutionSource().Seed(
             ExecutionFixture.Open("OrderWorkflow").WithPatchAttribute("core-patch").WithBrokenHistory());
 
-        var results = await Build(source).DiscoverAsync();
+        var result = Assert.Single(await Build(source).DiscoverAsync());
 
-        Assert.Equal(MarkerPresence.Present, Only(Assert.Single(results)).Marker);
+        Assert.Equal(MarkerPresence.Unknown, Only(result).Marker);
+        Assert.True(result.Executions.IsTruncated);
     }
 
     [Theory]
-    [InlineData("core-patch-3", "core-patch")]
-    [InlineData("v2", "v2")]
-    [InlineData("my-feature-flag-12", "my-feature-flag")]
-    [InlineData("nodash", "nodash")]
-    public async Task El_patchId_se_extrae_quitando_solo_el_sufijo_de_version(string entry, string expected)
+    [InlineData("core-patch-3")]
+    [InlineData("rot-1")]
+    [InlineData("my-feature-flag-12")]
+    [InlineData("v2")]
+    [InlineData("nodash")]
+    public async Task El_patchId_del_atributo_se_toma_crudo_sin_recortar_sufijos(string entry)
     {
         var source = new FakeExecutionSource().Seed(
             ExecutionFixture.Open("OrderWorkflow").WithChangeVersion(entry));
 
         var results = await Build(source).DiscoverAsync();
 
-        Assert.Equal(expected, Assert.Single(results).Key.PatchId);
+        Assert.Equal(entry, Assert.Single(results).Key.PatchId);
+    }
+
+    [Fact]
+    public async Task Tier1_con_historia_ilegible_y_patchId_con_sufijo_numerico_no_crea_entity_fantasma()
+    {
+        var source = new FakeExecutionSource().Seed(
+            ExecutionFixture.Open("OrderWorkflow").WithPatchAttribute("rot-1").WithBrokenHistory());
+
+        var results = await Build(source).DiscoverAsync();
+
+        Assert.DoesNotContain(results, r => r.Key.PatchId == "rot");
+        Assert.Contains(results, r => r.Key.PatchId == "rot-1");
     }
 
     [Fact]
@@ -312,7 +327,9 @@ public class PatchDiscoveryServiceTests
     [Fact]
     public async Task Con_MaxHistories_agotado_solo_se_trunca_el_patch_con_ejecuciones_sin_inspeccionar()
     {
-        var options = Options with { MaxHistories = 1 };
+        // Presupuesto de 2 lecturas: "patched" y "shipped" se leen, "pre" queda sin inspeccionar.
+        // (Una ejecución Tier 1 sin leer también sería Unknown desde el spec 16, B-3.)
+        var options = Options with { MaxHistories = 2 };
         var source = new FakeExecutionSource().Seed(
             HistoryFixtures.OpenWithAttribute("core-patch", "OrderWorkflow").WithWorkflowId("patched"),
             HistoryFixtures.OpenWithAttribute("other-patch", "ShippingWorkflow").WithWorkflowId("shipped"),

@@ -53,6 +53,47 @@ public class PatchKeyTests
             Assert.True(char.IsLetterOrDigit(c) || c is '.' or '_' or '-', $"carácter inesperado: '{c}'"));
     }
 
+    [Theory]
+    [InlineData("a b", "a_b")]
+    [InlineData("a:b", "a/b")]
+    [InlineData("a b", "a:b")]
+    public void ToWorkflowId_no_colisiona_cuando_el_saneado_iguala_dos_patchIds(string x, string y)
+    {
+        var a = new PatchKey("default", "OrderWorkflow", x);
+        var b = new PatchKey("default", "OrderWorkflow", y);
+
+        Assert.NotEqual(a.ToWorkflowId(), b.ToWorkflowId());
+    }
+
+    [Fact]
+    public void ToWorkflowId_no_colisiona_cuando_el_separador_cruza_segmentos()
+    {
+        var a = new PatchKey("default", "a::b", "c");
+        var b = new PatchKey("default", "a", "b::c");
+
+        Assert.NotEqual(a.ToWorkflowId(), b.ToWorkflowId());
+    }
+
+    [Fact]
+    public void ToWorkflowId_saneado_agrega_hash_y_es_deterministico()
+    {
+        var key = new PatchKey("default", "OrderWorkflow", "patch id");
+
+        var id = key.ToWorkflowId();
+
+        Assert.Matches("^patch-state::default::OrderWorkflow::patch_id_[0-9a-f]{8}$", id);
+        Assert.Equal(id, key.ToWorkflowId());
+    }
+
+    [Fact]
+    public void ToWorkflowId_saneado_y_largo_respeta_el_tope_de_200()
+    {
+        var id = new PatchKey("default", "OrderWorkflow", "a b" + new string('x', 400)).ToWorkflowId();
+
+        Assert.True(id.Length <= 200, $"largo {id.Length}");
+        Assert.Matches("_[0-9a-f]{8}$", id);
+    }
+
     [Fact]
     public void ToWorkflowId_no_reemplaza_puntos_guiones_ni_guion_bajo()
     {

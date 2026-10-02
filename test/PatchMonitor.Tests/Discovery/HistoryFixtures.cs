@@ -61,16 +61,16 @@ public sealed class ExecutionFixture
         return this;
     }
 
-    /// <summary>Agrega entradas crudas al search attribute (<c>&lt;patchId&gt;-&lt;version&gt;</c>).</summary>
+    /// <summary>Agrega entradas crudas (el <c>patchId</c> tal cual) al search attribute.</summary>
     public ExecutionFixture WithChangeVersion(params string[] entries)
     {
         _changeVersions.AddRange(entries);
         return this;
     }
 
-    /// <summary>Azúcar: agrega la entrada <c>&lt;patchId&gt;-&lt;version&gt;</c> al search attribute (tier 1).</summary>
-    public ExecutionFixture WithPatchAttribute(string patchId, int version = 1) =>
-        WithChangeVersion($"{patchId}-{version}");
+    /// <summary>Azúcar: agrega el <c>patchId</c> crudo al search attribute (tier 1).</summary>
+    public ExecutionFixture WithPatchAttribute(string patchId) =>
+        WithChangeVersion(patchId);
 
     /// <summary>Agrega un marker <c>core_patch</c> a la Event History simulada (tier 2).</summary>
     public ExecutionFixture WithMarker(string patchId, bool deprecated = false)

@@ -15,22 +15,13 @@ public class PhaseEvaluatorTests
         new DeprecatedToCleanGate(),
     });
 
-    [Fact]
-    public void Fase_Unknown_da_Inconclusive_sin_fase_siguiente()
+    [Theory]
+    [InlineData(PatchPhase.Unknown)]
+    [InlineData(PatchPhase.Clean)]
+    public void Fases_sin_transicion_lanzan_InvalidOperationException(PatchPhase phase)
     {
-        var verdict = _evaluator.Evaluate(Key, PatchPhase.Unknown, ExecutionSnapshotSet.Empty);
-
-        Assert.Equal(GateOutcome.Inconclusive, verdict.Outcome);
-        Assert.Null(verdict.NextPhase);
-    }
-
-    [Fact]
-    public void Fase_Clean_da_veredicto_terminal_sin_fase_siguiente()
-    {
-        var verdict = _evaluator.Evaluate(Key, PatchPhase.Clean, ExecutionSnapshotSet.Empty);
-
-        Assert.Equal(GateOutcome.Blocked, verdict.Outcome);
-        Assert.Null(verdict.NextPhase);
+        Assert.Throws<InvalidOperationException>(() =>
+            _evaluator.Evaluate(Key, phase, ExecutionSnapshotSet.Empty));
     }
 
     [Fact]

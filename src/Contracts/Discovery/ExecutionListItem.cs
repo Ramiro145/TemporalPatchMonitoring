@@ -5,8 +5,8 @@ namespace Contracts.Discovery;
 /// <summary>
 /// Foto cruda de una ejecución tal como la devuelve el listado de Temporal, antes de que el
 /// descubrimiento la interprete. <see cref="ChangeVersions"/> son las entradas del search
-/// attribute <c>TemporalChangeVersion</c> (<c>&lt;patchId&gt;-&lt;version&gt;</c>), ya
-/// parseadas; vacío si la ejecución no lo tiene o si el listado no lo trajo. El tier 1 del
+/// attribute <c>TemporalChangeVersion</c> (el <c>&lt;patchId&gt;</c> crudo, sin sufijo de
+/// versión), ya parseadas; vacío si la ejecución no lo tiene o si el listado no lo trajo. El tier 1 del
 /// descubrimiento se apoya en este campo para no leer la historia de ejecuciones que
 /// claramente no tienen el patch.
 /// </summary>
