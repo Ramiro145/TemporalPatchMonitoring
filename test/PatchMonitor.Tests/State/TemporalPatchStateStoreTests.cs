@@ -3,6 +3,7 @@ using Common.State;
 using Contracts.Domain;
 using Contracts.Phase;
 using Contracts.State;
+using Contracts.Workflows;
 using PatchMonitor.Workflows;
 using Temporalio.Client;
 using Temporalio.Testing;
@@ -172,6 +173,89 @@ public class TemporalPatchStateStoreTests
 
             var state = await store.GetStateAsync(KeyA);
             Assert.Equal(1, state!.NotifiedRevision);
+        });
+    }
+
+    // ---- Spec 17: migración de entities antiguas ---------------------------------------
+
+    private static async Task RunWithClientAsync(
+        Func<ITemporalClient, StateOptions, TemporalPatchStateStore, Task> body)
+    {
+        await using var env = await WorkflowEnvironment.StartTimeSkippingAsync();
+        var taskQueue = $"store-mig-{Guid.NewGuid():N}";
+        using var worker = new TemporalWorker(
+            env.Client,
+            new TemporalWorkerOptions(taskQueue)
+                .AddWorkflow<PatchStateWorkflow>()
+                .AddWorkflow<PatchRegistryWorkflow>());
+
+        var options = new StateOptions(
+            StateOptions.DefaultContinueAsNewThreshold, StateOptions.DefaultHistoryLimit, taskQueue);
+        var client = new ResettableAsyncLazy<ITemporalClient>(() => Task.FromResult<ITemporalClient>(env.Client));
+        var store = new TemporalPatchStateStore(client, options, new NoopDecisionSink());
+
+        await worker.ExecuteAsync(() => body(env.Client, options, store));
+    }
+
+    private static async Task<int> CountMigrateSignalsAsync(ITemporalClient client, string workflowId)
+    {
+        var history = await client.GetWorkflowHandle(workflowId).FetchHistoryAsync();
+        return history.Events.Count(e =>
+            e.WorkflowExecutionSignaledEventAttributes is { } attrs
+            && attrs.SignalName.Contains("MigrateOptions", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task Un_entity_antiguo_sin_opciones_se_migra_una_sola_vez()
+    {
+        await RunWithClientAsync(async (client, options, store) =>
+        {
+            // Entity arrancado como antes del spec 14: sin opciones.
+            var workflowId = KeyA.ToWorkflowId();
+            var legacy = await client.StartWorkflowAsync(
+                (IPatchStateWorkflow wf) => wf.RunAsync(KeyA, null, null),
+                new WorkflowOptions(workflowId, options.TaskQueue));
+            Assert.False(await legacy.QueryAsync(wf => wf.HasRecordedOptions()));
+
+            await store.RecordAssessmentAsync(Assessment(KeyA, T0));
+            await store.RecordAssessmentAsync(Assessment(KeyA, T0.AddMinutes(5)));
+            await store.RecordAssessmentAsync(Assessment(KeyA, T0.AddMinutes(10)));
+
+            Assert.True(await legacy.QueryAsync(wf => wf.HasRecordedOptions()));
+            Assert.Equal(1, await CountMigrateSignalsAsync(client, workflowId));
+        });
+    }
+
+    [Fact]
+    public async Task Un_entity_nuevo_nace_con_opciones_y_no_recibe_el_signal_de_migracion()
+    {
+        await RunWithClientAsync(async (client, _, store) =>
+        {
+            await store.RecordAssessmentAsync(Assessment(KeyB, T0));
+            await store.RecordAssessmentAsync(Assessment(KeyB, T0.AddMinutes(5)));
+
+            var handle = client.GetWorkflowHandle<IPatchStateWorkflow>(KeyB.ToWorkflowId());
+            Assert.True(await handle.QueryAsync(wf => wf.HasRecordedOptions()));
+            Assert.Equal(0, await CountMigrateSignalsAsync(client, KeyB.ToWorkflowId()));
+        });
+    }
+
+    [Fact]
+    public async Task Un_registry_antiguo_sin_opciones_se_migra_una_sola_vez()
+    {
+        await RunWithClientAsync(async (client, options, store) =>
+        {
+            var legacy = await client.StartWorkflowAsync(
+                (IPatchRegistryWorkflow wf) => wf.RunAsync(null, null),
+                new WorkflowOptions(StateOptions.RegistryWorkflowId, options.TaskQueue));
+            Assert.False(await legacy.QueryAsync(wf => wf.HasRecordedOptions()));
+
+            await store.RegisterAsync(KeyA);
+            await store.RegisterAsync(KeyB);
+            await store.RegisterAsync(KeyA);
+
+            Assert.True(await legacy.QueryAsync(wf => wf.HasRecordedOptions()));
+            Assert.Equal(1, await CountMigrateSignalsAsync(client, StateOptions.RegistryWorkflowId));
         });
     }
 }

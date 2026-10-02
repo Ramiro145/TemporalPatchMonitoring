@@ -27,10 +27,27 @@ public interface IPatchStateWorkflow
     /// <param name="options">
     /// Opciones del estado durable con las que corre esta ejecución (spec 14). El
     /// <c>Continue-As-New</c> las arrastra. <c>null</c> solo en ejecuciones vivas arrancadas antes
-    /// de este argumento: el workflow cae entonces al entorno, para que su replay no cambie.
+    /// de este argumento: esas no leen el entorno (spec 17) ni hacen <c>Continue-As-New</c> hasta
+    /// recibir <see cref="MigrateOptionsAsync"/>.
     /// </param>
     [WorkflowRun]
     Task RunAsync(PatchKey key, PatchState? carryover, StateOptions? options);
+
+    /// <summary>
+    /// Spec 17: graba las opciones en una ejecución arrancada sin ellas (anterior al spec 14). Es
+    /// idempotente: si la ejecución ya tiene opciones no hace nada. Desde que las graba, la
+    /// ejecución respeta el umbral de <c>Continue-As-New</c> y lo arrastra, así que queda
+    /// determinística sin leer el entorno.
+    /// </summary>
+    [WorkflowSignal]
+    Task MigrateOptionsAsync(StateOptions options);
+
+    /// <summary>
+    /// <c>true</c> si la ejecución ya tiene opciones grabadas (arrancó con ellas o las recibió por
+    /// <see cref="MigrateOptionsAsync"/>); <c>false</c> en una ejecución antigua sin migrar.
+    /// </summary>
+    [WorkflowQuery]
+    bool HasRecordedOptions();
 
     /// <summary>Registra un assessment de la pasada de monitoreo; avanza <c>AssessmentCount</c> y, si el veredicto cambió, <c>Revision</c>.</summary>
     [WorkflowSignal]

@@ -66,7 +66,7 @@ public class ContinueAsNewTests
     [Fact]
     public async Task El_entity_hace_continue_as_new_al_superar_el_umbral_y_conserva_el_estado()
     {
-        await WithEnvAsync("3", "2", async () =>
+        await WithEnvAsync(null, null, async () =>
         {
             await using var env = await WorkflowEnvironment.StartTimeSkippingAsync();
             var taskQueue = $"can-state-{Guid.NewGuid():N}";
@@ -77,7 +77,7 @@ public class ContinueAsNewTests
             await worker.ExecuteAsync(async () =>
             {
                 var handle = await env.Client.StartWorkflowAsync(
-                    (IPatchStateWorkflow wf) => wf.RunAsync(Key, null, null),
+                    (IPatchStateWorkflow wf) => wf.RunAsync(Key, null, new StateOptions(3, 2, taskQueue)),
                     new WorkflowOptions(id: $"can-state-wf-{Guid.NewGuid():N}", taskQueue: taskQueue));
 
                 var firstRunId = (await handle.DescribeAsync()).RunId;
@@ -196,7 +196,7 @@ public class ContinueAsNewTests
     [Fact]
     public async Task El_registry_hace_continue_as_new_arrastrando_el_set_completo()
     {
-        await WithEnvAsync("3", null, async () =>
+        await WithEnvAsync(null, null, async () =>
         {
             await using var env = await WorkflowEnvironment.StartTimeSkippingAsync();
             var taskQueue = $"can-registry-{Guid.NewGuid():N}";
@@ -207,7 +207,7 @@ public class ContinueAsNewTests
             await worker.ExecuteAsync(async () =>
             {
                 var handle = await env.Client.StartWorkflowAsync(
-                    (IPatchRegistryWorkflow wf) => wf.RunAsync(null, null),
+                    (IPatchRegistryWorkflow wf) => wf.RunAsync(null, new StateOptions(3, 2, taskQueue)),
                     new WorkflowOptions(id: $"can-registry-wf-{Guid.NewGuid():N}", taskQueue: taskQueue));
 
                 var firstRunId = (await handle.DescribeAsync()).RunId;
@@ -222,6 +222,134 @@ public class ContinueAsNewTests
 
                 Assert.NotEqual(firstRunId, laterRunId);
                 Assert.Equal(3, state.Keys.Count);
+            });
+        });
+    }
+
+    // ---- Spec 17: entities antiguas (arrancadas sin opciones) ----------------------------
+
+    [Fact]
+    public async Task Un_entity_antiguo_sin_opciones_no_hace_CAN_aunque_el_entorno_tenga_un_umbral_bajo()
+    {
+        // Antes del spec 17 el workflow leía el entorno: con umbral 1 hacía CAN en el primer
+        // assessment y el replay de una historia grabada con otro umbral moría con NonDeterminism.
+        await WithEnvAsync("1", null, async () =>
+        {
+            await using var env = await WorkflowEnvironment.StartTimeSkippingAsync();
+            var taskQueue = $"legacy-state-{Guid.NewGuid():N}";
+            using var worker = new TemporalWorker(
+                env.Client,
+                new TemporalWorkerOptions(taskQueue).AddWorkflow<PatchStateWorkflow>());
+
+            await worker.ExecuteAsync(async () =>
+            {
+                var handle = await env.Client.StartWorkflowAsync(
+                    (IPatchStateWorkflow wf) => wf.RunAsync(Key, null, null),
+                    new WorkflowOptions(id: $"legacy-state-wf-{Guid.NewGuid():N}", taskQueue: taskQueue));
+                var firstRunId = (await handle.DescribeAsync()).RunId;
+
+                for (var i = 0; i < 3; i++)
+                {
+                    var at = T0.AddMinutes(i);
+                    await handle.SignalAsync(wf => wf.RecordAssessmentAsync(
+                        Assessment(Verdict(GateOutcome.Blocked, PatchPhase.Clean, at), at)));
+                }
+
+                var state = await handle.QueryAsync(wf => wf.GetState());
+                await Task.Delay(300);
+
+                Assert.Equal(3, state.AssessmentCount);
+                Assert.Equal(firstRunId, (await handle.DescribeAsync()).RunId);
+                Assert.False(await handle.QueryAsync(wf => wf.HasRecordedOptions()));
+            });
+        });
+    }
+
+    [Fact]
+    public async Task Un_entity_antiguo_migrado_hace_CAN_con_el_umbral_grabado_y_lo_arrastra()
+    {
+        // El entorno trae un umbral enorme: si el workflow lo leyera, nunca haría CAN.
+        await WithEnvAsync("1000", null, async () =>
+        {
+            await using var env = await WorkflowEnvironment.StartTimeSkippingAsync();
+            var taskQueue = $"legacy-state-mig-{Guid.NewGuid():N}";
+            using var worker = new TemporalWorker(
+                env.Client,
+                new TemporalWorkerOptions(taskQueue).AddWorkflow<PatchStateWorkflow>());
+
+            await worker.ExecuteAsync(async () =>
+            {
+                var handle = await env.Client.StartWorkflowAsync(
+                    (IPatchStateWorkflow wf) => wf.RunAsync(Key, null, null),
+                    new WorkflowOptions(id: $"legacy-state-mig-wf-{Guid.NewGuid():N}", taskQueue: taskQueue));
+                var firstRunId = (await handle.DescribeAsync()).RunId;
+
+                await handle.SignalAsync(wf => wf.MigrateOptionsAsync(new StateOptions(2, 2, taskQueue)));
+                // Idempotente: unas opciones ya grabadas no se pisan.
+                await handle.SignalAsync(wf => wf.MigrateOptionsAsync(new StateOptions(1000, 2, taskQueue)));
+                Assert.True(await handle.QueryAsync(wf => wf.HasRecordedOptions()));
+
+                for (var i = 0; i < 2; i++)
+                {
+                    var at = T0.AddMinutes(i);
+                    await handle.SignalAsync(wf => wf.RecordAssessmentAsync(
+                        Assessment(Verdict(GateOutcome.Blocked, PatchPhase.Clean, at), at)));
+                }
+
+                var secondRunId = await WaitForNewRunAsync(handle, firstRunId!);
+
+                // La segunda ejecución nació con las opciones arrastradas por el CAN.
+                Assert.True(await handle.QueryAsync(wf => wf.HasRecordedOptions()));
+                for (var i = 2; i < 4; i++)
+                {
+                    var at = T0.AddMinutes(i);
+                    await handle.SignalAsync(wf => wf.RecordAssessmentAsync(
+                        Assessment(Verdict(GateOutcome.Blocked, PatchPhase.Clean, at), at)));
+                }
+
+                var thirdRunId = await WaitForNewRunAsync(handle, secondRunId);
+                Assert.NotEqual(secondRunId, thirdRunId);
+            });
+        });
+    }
+
+    [Fact]
+    public async Task Un_registry_antiguo_sin_opciones_no_hace_CAN_hasta_migrar()
+    {
+        await WithEnvAsync("1", null, async () =>
+        {
+            await using var env = await WorkflowEnvironment.StartTimeSkippingAsync();
+            var taskQueue = $"legacy-registry-{Guid.NewGuid():N}";
+            using var worker = new TemporalWorker(
+                env.Client,
+                new TemporalWorkerOptions(taskQueue).AddWorkflow<PatchRegistryWorkflow>());
+
+            await worker.ExecuteAsync(async () =>
+            {
+                var handle = await env.Client.StartWorkflowAsync(
+                    (IPatchRegistryWorkflow wf) => wf.RunAsync(null, null),
+                    new WorkflowOptions(id: $"legacy-registry-wf-{Guid.NewGuid():N}", taskQueue: taskQueue));
+                var firstRunId = (await handle.DescribeAsync()).RunId;
+
+                await handle.SignalAsync(wf => wf.RegisterAsync(new PatchKey("default", "A", "a")));
+                await handle.SignalAsync(wf => wf.RegisterAsync(new PatchKey("default", "B", "b")));
+                var before = await handle.QueryAsync(wf => wf.List());
+                await Task.Delay(300);
+
+                Assert.Equal(2, before.Keys.Count);
+                Assert.Equal(firstRunId, (await handle.DescribeAsync()).RunId);
+                Assert.False(await handle.QueryAsync(wf => wf.HasRecordedOptions()));
+
+                // Migrado con un umbral ya superado: el CAN ocurre y arrastra el set completo.
+                await handle.SignalAsync(wf => wf.MigrateOptionsAsync(new StateOptions(2, 2, taskQueue)));
+                await handle.SignalAsync(wf => wf.MigrateOptionsAsync(new StateOptions(1000, 2, taskQueue)));
+
+                var secondRunId = await WaitForNewRunAsync(handle, firstRunId!);
+                var after = await handle.QueryAsync(wf => wf.List());
+
+                Assert.NotEqual(firstRunId, secondRunId);
+                Assert.Equal(2, after.Keys.Count);
+                Assert.True(await handle.QueryAsync(wf => wf.HasRecordedOptions()));
             });
         });
     }

@@ -1,4 +1,5 @@
 using Common.Temporal;
+using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using Common;
 using Contracts.Api;
@@ -25,6 +26,10 @@ public sealed class TemporalPatchStateStore : IPatchStateStore
     private readonly StateOptions _options;
     private readonly IDecisionSink _sink;
 
+    // Entities cuyas opciones ya se verificaron en este proceso (spec 17): la migración de una
+    // ejecución antigua cuesta una query por entity por vida del proceso, no una por assessment.
+    private readonly ConcurrentDictionary<string, byte> _optionsChecked = new(StringComparer.Ordinal);
+
     public TemporalPatchStateStore(
         ResettableAsyncLazy<ITemporalClient> client, StateOptions options, IDecisionSink sink)
     {
@@ -42,6 +47,11 @@ public sealed class TemporalPatchStateStore : IPatchStateStore
             input.Key.ToWorkflowId(),
             (IPatchStateWorkflow wf) => wf.RunAsync(input.Key, null, _options),
             (IPatchStateWorkflow wf) => wf.RecordAssessmentAsync(input)).ConfigureAwait(false);
+
+        await EnsureOptionsRecordedAsync(
+            input.Key.ToWorkflowId(),
+            () => handle.QueryAsync(wf => wf.HasRecordedOptions()),
+            () => handle.SignalAsync(wf => wf.MigrateOptionsAsync(_options))).ConfigureAwait(false);
 
         // Indexar la clave en el registry, también por signal-with-start.
         await RegisterAsync(input.Key, ct).ConfigureAwait(false);
@@ -86,10 +96,45 @@ public sealed class TemporalPatchStateStore : IPatchStateStore
 
     public async Task RegisterAsync(PatchKey key, CancellationToken ct = default)
     {
-        await SignalWithStartAsync(
+        var handle = await SignalWithStartAsync(
             StateOptions.RegistryWorkflowId,
             (IPatchRegistryWorkflow wf) => wf.RunAsync(null, _options),
             (IPatchRegistryWorkflow wf) => wf.RegisterAsync(key)).ConfigureAwait(false);
+
+        await EnsureOptionsRecordedAsync(
+            StateOptions.RegistryWorkflowId,
+            () => handle.QueryAsync(wf => wf.HasRecordedOptions()),
+            () => handle.SignalAsync(wf => wf.MigrateOptionsAsync(_options))).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Spec 17: una ejecución arrancada antes del spec 14 no tiene opciones grabadas y, sin
+    /// ellas, nunca hace Continue-As-New. La primera vez que este proceso la ve le consulta
+    /// <c>HasRecordedOptions</c> y, si es <c>false</c>, le envía <c>MigrateOptionsAsync</c> con las
+    /// opciones del proceso. Es de mejor esfuerzo: un fallo no se propaga (el assessment ya se
+    /// registró) y, al no marcarse como verificada, se reintenta en la siguiente pasada.
+    /// </summary>
+    private async Task EnsureOptionsRecordedAsync(
+        string workflowId, Func<Task<bool>> hasRecordedOptions, Func<Task> migrate)
+    {
+        if (_optionsChecked.ContainsKey(workflowId))
+        {
+            return;
+        }
+
+        try
+        {
+            if (!await hasRecordedOptions().ConfigureAwait(false))
+            {
+                await migrate().ConfigureAwait(false);
+            }
+
+            _optionsChecked[workflowId] = 0;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Mejor esfuerzo.
+        }
     }
 
     public async Task<IReadOnlyList<PatchKey>> ListAsync(CancellationToken ct = default)

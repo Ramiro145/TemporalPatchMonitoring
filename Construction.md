@@ -183,6 +183,7 @@ Derivada de las 6 specs de `ReleaseOrderDemo`. Cada `/spec` que se cree debe res
 | 14 | `audit-high-severity-fixes` | Corregir los hallazgos altos de la auditoría (`Audtioria_pathmonitor.md`): un fallo del notificador nunca cuenta como enviado, `ContinuedAsNew` no bloquea gates, los workflows no leen el entorno y la suite deja de ser intermitente | 02, 05, 06, 07 |
 | 15 | `audit-medium-severity-fixes` | Hallazgos medios de la auditoría (M-2 a M-9): conexiones y reconexión, actualización del Schedule, `restart` del worker, `Clean` que no retrocede sin evidencia nueva, topes de descubrimiento coherentes, `/runs` y rotación estable de patches | 14 |
 | 16 | `audit-low-severity-fixes` | Hallazgos bajos de la auditoría (B-1 a B-8) y el recorte de `patchId` en el Tier 1; contenedores no-root. El token de la API (M-1) quedó fuera y sin spec | 14, 15 |
+| 17 | `legacy-entity-options-migration` | Cierra el hueco que el spec 14 dejó en A-3: los workflows no leen el entorno ni siquiera en entities antiguas (migración automática de opciones), una query con replay roto falla rápido y `GET /patches/{...}` devuelve `503` con el motivo | 05, 14, 15, 16 |
 
 ### Por qué van en ese orden
 

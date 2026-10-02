@@ -19,16 +19,20 @@ public class PatchRegistryWorkflow : IPatchRegistryWorkflow
     // Clave = WorkflowId determinístico del entity; valor = la PatchKey original. El
     // WorkflowId saneado es lo que da la deduplicación estable.
     private readonly Dictionary<string, PatchKey> _keys = new();
-    private StateOptions _options = null!;
+    // Nulo en una ejecución antigua (arrancada antes del spec 14) hasta que MigrateOptionsAsync
+    // las graba. Nunca se completa desde el entorno: leerlo no es determinístico (spec 17).
+    private StateOptions? _options;
     private DateTimeOffset _updatedAt;
     private int _signalsSinceStart;
 
     [WorkflowRun]
     public async Task RunAsync(PatchRegistryState? carryover, StateOptions? options = null)
     {
-        // Argumento de arranque arrastrado por el Continue-As-New; el entorno es solo el camino
-        // legado de ejecuciones vivas arrancadas sin él (spec 14).
-        _options = options ?? StateOptions.FromEnvironment();
+        // Argumento de arranque arrastrado por el Continue-As-New. Una ejecución antigua (sin él)
+        // no lee el entorno (spec 17): queda sin opciones y no hace Continue-As-New hasta recibir
+        // MigrateOptionsAsync. "?? _options" evita pisar unas opciones que un signal ya grabó si
+        // llegó antes de que corra RunAsync.
+        _options = options ?? _options;
         _updatedAt = Workflow.UtcNow;
 
         if (carryover is not null)
@@ -42,12 +46,29 @@ public class PatchRegistryWorkflow : IPatchRegistryWorkflow
         }
 
         await Workflow.WaitConditionAsync(
-            () => _signalsSinceStart >= _options.ContinueAsNewThreshold
+            () => _options is { } o
+                  && _signalsSinceStart >= o.ContinueAsNewThreshold
                   && Workflow.AllHandlersFinished);
 
+        var recorded = _options!;
         throw Workflow.CreateContinueAsNewException(
-            (IPatchRegistryWorkflow wf) => wf.RunAsync(List(), _options));
+            (IPatchRegistryWorkflow wf) => wf.RunAsync(List(), recorded));
     }
+
+    [WorkflowSignal]
+    public Task MigrateOptionsAsync(StateOptions options)
+    {
+        // Idempotente. El marker se evalúa en vivo (la señal no existe en historias viejas).
+        if (_options is null && Workflow.Patched(PatchStateWorkflow.MigrateOptionsPatchId))
+        {
+            _options = options;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    [WorkflowQuery]
+    public bool HasRecordedOptions() => _options is not null;
 
     [WorkflowSignal]
     public Task RegisterAsync(PatchKey key)

@@ -16,11 +16,25 @@ public interface IPatchRegistryWorkflow
     /// <param name="carryover">Set de claves arrastrado tras un <c>Continue-As-New</c>, o <c>null</c> en el primer arranque.</param>
     /// <param name="options">
     /// Opciones con las que corre esta ejecución (spec 14); el <c>Continue-As-New</c> las arrastra.
-    /// <c>null</c> solo en ejecuciones vivas arrancadas antes de este argumento: el workflow cae
-    /// entonces al entorno, para que su replay no cambie.
+    /// <c>null</c> solo en ejecuciones vivas arrancadas antes de este argumento: esas no leen el
+    /// entorno (spec 17) ni hacen <c>Continue-As-New</c> hasta recibir <see cref="MigrateOptionsAsync"/>.
     /// </param>
     [WorkflowRun]
     Task RunAsync(PatchRegistryState? carryover, StateOptions? options);
+
+    /// <summary>
+    /// Spec 17: graba las opciones en una ejecución arrancada sin ellas (anterior al spec 14).
+    /// Idempotente: si ya tiene opciones no hace nada.
+    /// </summary>
+    [WorkflowSignal]
+    Task MigrateOptionsAsync(StateOptions options);
+
+    /// <summary>
+    /// <c>true</c> si la ejecución ya tiene opciones grabadas; <c>false</c> en una ejecución
+    /// antigua sin migrar.
+    /// </summary>
+    [WorkflowQuery]
+    bool HasRecordedOptions();
 
     /// <summary>Agrega una clave al índice. Idempotente: registrar la misma clave N veces deja una sola entrada.</summary>
     [WorkflowSignal]

@@ -22,6 +22,9 @@ namespace PatchMonitor.Workflows;
 [Workflow]
 public class PatchStateWorkflow : IPatchStateWorkflow
 {
+    /// <summary>Marker de la migración de opciones de entities antiguas (spec 17).</summary>
+    internal const string MigrateOptionsPatchId = "state-options-recorded-v1";
+
     private static readonly PatchPhase[] ValidOverridePhases =
     {
         PatchPhase.Coexistence,
@@ -29,7 +32,9 @@ public class PatchStateWorkflow : IPatchStateWorkflow
         PatchPhase.Clean,
     };
 
-    private readonly StateOptions _options;
+    // Nulo en una ejecución antigua (arrancada antes del spec 14) hasta que MigrateOptionsAsync
+    // las graba. Nunca se completa desde el entorno: leerlo no es determinístico (spec 17).
+    private StateOptions? _options;
     private PatchState _state;
 
     /// <summary>
@@ -42,25 +47,52 @@ public class PatchStateWorkflow : IPatchStateWorkflow
     public PatchStateWorkflow(PatchKey key, PatchState? carryover, StateOptions? options = null)
     {
         // Las opciones llegan como argumento de arranque y el Continue-As-New las arrastra:
-        // leer el entorno acá no sería determinístico (spec 14). El fallback al entorno es solo
-        // el camino legado de ejecuciones vivas arrancadas sin el argumento; tras su próximo
-        // Continue-As-New ya llevan las opciones y quedan determinísticas.
-        _options = options ?? StateOptions.FromEnvironment();
+        // leer el entorno acá no sería determinístico (spec 14). Una ejecución antigua, arrancada
+        // sin el argumento, queda con _options nulo (spec 17) y no lee el entorno: su replay es
+        // el mismo con cualquier valor de PATCH_STATE_*. Recibe las opciones por
+        // MigrateOptionsAsync y desde ahí queda determinística.
+        _options = options;
         _state = carryover ?? PatchState.Initial(key);
     }
 
     [WorkflowRun]
     public async Task RunAsync(PatchKey key, PatchState? carryover, StateOptions? options = null)
     {
-        // Se espera al umbral de assessments Y a que no haya handlers en vuelo: un
-        // Continue-As-New con un update de override a medio aplicar perdería la actualización.
+        // Se espera a tener opciones grabadas, al umbral de assessments Y a que no haya handlers
+        // en vuelo: un Continue-As-New con un update de override a medio aplicar perdería la
+        // actualización. Sin opciones (ejecución antigua sin migrar) la condición nunca se cumple,
+        // igual que en su historia grabada.
         await Workflow.WaitConditionAsync(
-            () => _state.AssessmentCount >= _options.ContinueAsNewThreshold
+            () => _options is { } o
+                  && _state.AssessmentCount >= o.ContinueAsNewThreshold
                   && Workflow.AllHandlersFinished);
 
+        var recorded = _options!;
         throw Workflow.CreateContinueAsNewException(
-            (IPatchStateWorkflow wf) => wf.RunAsync(key, _state.ForCarryover(_options.HistoryLimit), _options));
+            (IPatchStateWorkflow wf) => wf.RunAsync(key, _state.ForCarryover(recorded.HistoryLimit), recorded));
     }
+
+    [WorkflowSignal]
+    public Task MigrateOptionsAsync(StateOptions options)
+    {
+        // Idempotente: una ejecución con opciones (propias o ya migradas) no cambia.
+        if (_options is not null)
+        {
+            return Task.CompletedTask;
+        }
+
+        // El marker se evalúa en vivo (la señal no existe en historias viejas), así que devuelve
+        // true y queda grabado; un replay posterior lo encuentra y repite la misma decisión.
+        if (Workflow.Patched(MigrateOptionsPatchId))
+        {
+            _options = options;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    [WorkflowQuery]
+    public bool HasRecordedOptions() => _options is not null;
 
     [WorkflowSignal]
     public Task RecordAssessmentAsync(PatchAssessmentInput input)
@@ -178,9 +210,10 @@ public class PatchStateWorkflow : IPatchStateWorkflow
         IReadOnlyList<PatchStateChange> history, PatchStateChange change)
     {
         var next = new List<PatchStateChange>(history) { change };
-        if (next.Count > _options.HistoryLimit)
+        var limit = _options?.HistoryLimit ?? StateOptions.DefaultHistoryLimit;
+        if (next.Count > limit)
         {
-            next.RemoveRange(0, next.Count - _options.HistoryLimit);
+            next.RemoveRange(0, next.Count - limit);
         }
 
         return next;

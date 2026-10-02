@@ -60,6 +60,12 @@ determinación de los propios workflows del monitor.
     su replay no cambie; el `Continue-As-New` pasa `_options` como argumento, así que tras su
     próximo CAN esas ejecuciones quedan determinísticas. Reescribir el comentario de
     `PatchStateWorkflow.cs:44-45`.
+  - **Nota de corrección (spec 17, 2026-10-02):** el fallback al entorno no cerraba A-3 para las
+    ejecuciones antiguas. Esas ejecuciones nunca llegan al umbral, así que nunca hacen su "próximo
+    CAN" y siguen leyendo el entorno: la prueba e2e de cierre bajó `PATCH_STATE_CAN_THRESHOLD` y
+    rompió el replay de 3 de 6 entities (`Nondeterminism error`). El
+    [spec 17](17-legacy-entity-options-migration.md) elimina el fallback y las migra
+    automáticamente.
   - `src/Common/State/TemporalPatchStateStore.cs`: pasar su `_options` (ya inyectado) como argumento
     en los start de `SignalWithStartAsync` (entity y registry) y de `EnsureEntityAsync`.
   - No exige `Workflow.Patched`: agregar un argumento opcional y elegir de dónde sale el umbral no

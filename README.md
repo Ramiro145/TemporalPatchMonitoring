@@ -210,6 +210,10 @@ cambios, y hace `Continue-As-New` al superar `PATCH_STATE_CAN_THRESHOLD`. Un ín
 Los entity workflows no leen el entorno mientras corren: reciben `PATCH_STATE_*` al arrancar y
 las arrastran en cada `Continue-As-New`, así que **un cambio en `PATCH_STATE_*` aplica a cada
 entity recién tras su próximo `Continue-As-New`** (o si se reinicia el entity), no al instante.
+Cambiar `PATCH_STATE_*` es seguro: no rompe el replay de ningún entity vivo. Los entities
+arrancados antes del spec 14 (sin opciones grabadas) no hacen `Continue-As-New` hasta que el
+monitor, en el primer assessment que les registra, les graba las opciones del proceso (migración
+automática, spec 17); un entity antiguo que ya no recibe assessments queda como está, sin riesgo.
 
 **5. Notificación.** Solo cuando el estado del patch cambió (fase, resultado del gate o fase
 siguiente). Una corrida sin cambios no avisa. Siempre se escribe una línea JSON en el log del
@@ -239,7 +243,7 @@ Swagger en <http://localhost:5100/swagger>.
 | ------------- | -------- |
 | `GET /health` | ¿Responde el cluster del monitor? |
 | `GET /patches` | Todos los patches conocidos con su fase y gate |
-| `GET /patches/{ns}/{type}/{patchId}` | Detalle: veredicto actual y anterior, bloqueantes, historial de cambios |
+| `GET /patches/{ns}/{type}/{patchId}` | Detalle: veredicto actual y anterior, bloqueantes, historial de cambios. Si el entity no se puede leer devuelve `503` con el motivo en `detail` (el override también) |
 | `POST /patches/{ns}/{type}/{patchId}/override` | Forzar la fase de un patch (con vencimiento) |
 | `DELETE /patches/{ns}/{type}/{patchId}/override` | Quitar el override y volver a la fase inferida |
 | `GET /schedule` | Estado del Schedule: pausado, intervalo, última y próxima corrida |

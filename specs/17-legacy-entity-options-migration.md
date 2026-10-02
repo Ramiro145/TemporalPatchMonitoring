@@ -1,6 +1,6 @@
 # 17 - Entities antiguas determinísticas y fallo rápido
 
-**Estado:** Aprobado
+**Estado:** Implementado
 **Depende de:** [05-durable-state-entity-workflows.md](05-durable-state-entity-workflows.md), [14-audit-high-severity-fixes.md](14-audit-high-severity-fixes.md), [15-audit-medium-severity-fixes.md](15-audit-medium-severity-fixes.md), [16-audit-low-severity-fixes.md](16-audit-low-severity-fixes.md)
 **Fecha:** 2026-10-02
 
@@ -127,21 +127,21 @@ Cada paso deja `dotnet build` sin errores y `dotnet test` en verde.
 
 ## Criterios de aceptación
 
-- [ ] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
-- [ ] `dotnet test PatchMonitor.sln` pasa en verde sin Docker.
-- [ ] `FromEnvironment` no aparece en `src/PatchMonitor/Workflows/` (grep).
-- [ ] Una run sin opciones, con un umbral bajo en el entorno, no hace Continue-As-New (test, ambos
+- [x] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
+- [x] `dotnet test PatchMonitor.sln` pasa en verde sin Docker.
+- [x] `FromEnvironment` no aparece en `src/PatchMonitor/Workflows/` (grep).
+- [x] Una run sin opciones, con un umbral bajo en el entorno, no hace Continue-As-New (test, ambos
       workflows).
-- [ ] `MigrateOptionsAsync` deja `HasRecordedOptions == true` y el Continue-As-New siguiente arrastra
+- [x] `MigrateOptionsAsync` deja `HasRecordedOptions == true` y el Continue-As-New siguiente arrastra
       las opciones (test).
-- [ ] El store migra una entity antigua una sola vez por proceso y no envía el signal a una nueva (test).
-- [ ] Un `WorkflowQueryFailedException` en una activity no se reintenta y deja el motivo en `errors` del
+- [x] El store migra una entity antigua una sola vez por proceso y no envía el signal a una nueva (test).
+- [x] Un `WorkflowQueryFailedException` en una activity no se reintenta y deja el motivo en `errors` del
       run (test).
-- [ ] `GET` de un patch con entity ilegible devuelve 503 con `detail` (test).
-- [ ] En vivo: las entities antiguas quedan con `HasRecordedOptions == true`, y cambiar
+- [x] `GET` de un patch con entity ilegible devuelve 503 con `detail` (test).
+- [x] En vivo: las entities antiguas quedan con `HasRecordedOptions == true`, y cambiar
       `PATCH_STATE_CAN_THRESHOLD` no produce `Nondeterminism error` ni ticks colgados (verificación
-      manual).
-- [ ] `README.md`, `CLAUDE.md`, `Construction.md` y la nota del spec 14 reflejan el cambio.
+      manual). *(Verificado el 2026-10-02: 0 errores de no determinismo, las 6 entities legibles y ticks sin colgarse; evidencia en `docs/e2e/spec-17-evidence.md`.)*
+- [x] `README.md`, `CLAUDE.md`, `Construction.md` y la nota del spec 14 reflejan el cambio.
 
 ## Decisiones
 

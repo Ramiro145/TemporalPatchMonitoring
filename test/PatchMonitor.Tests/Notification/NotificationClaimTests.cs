@@ -100,7 +100,7 @@ public class NotificationClaimTests
             await worker.ExecuteAsync(async () =>
             {
                 var handle = await env.Client.StartWorkflowAsync(
-                    (IPatchStateWorkflow wf) => wf.RunAsync(Key, null, null),
+                    (IPatchStateWorkflow wf) => wf.RunAsync(Key, null, new StateOptions(1, 2, taskQueue)),
                     new WorkflowOptions(id: $"notif-claim-can-wf-{Guid.NewGuid():N}", taskQueue: taskQueue));
 
                 await handle.ExecuteUpdateAsync(wf => wf.TryClaimNotificationAsync(1));

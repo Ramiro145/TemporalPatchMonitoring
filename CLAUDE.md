@@ -30,7 +30,7 @@ cambios de arquitectura.
 
 ## Estado actual
 
-- Specs **01 a 09, 11, 12 y 13 implementados** (más los 14 a 16 de la auditoría, abajo) (`specs/`). El spec 09 validó el monitor end-to-end
+- Specs **01 a 09, 11, 12 y 13 implementados** (más los 14 a 17 de la auditoría, abajo) (`specs/`). El spec 09 validó el monitor end-to-end
   contra el `ReleaseOrderDemo` real (evidencia en `docs/e2e/evidence/`). El spec 11 agregó el
   dashboard web (`web/`, ver `## Frontend` más abajo). El spec 12 movió el monitor a apoyarse en un
   cluster de Temporal existente, aislado por namespace (`monitor` propio / `default` observado) en
@@ -55,6 +55,10 @@ cambios de arquitectura.
   `WorkflowValidator` devuelve `NotFound` por código, `shadcn` en `devDependencies` y contenedores
   no-root (dashboard con `nginx-unprivileged` en `8080`). **M-1 (token de la API) quedó fuera, sin
   spec**: se documenta como límite conocido en el README.
+- **Spec 17** (hueco que dejó el spec 14 en A-3, hallado en la prueba e2e de cierre): sin
+  `FromEnvironment()` en workflows, migración automática de entities antiguas
+  (`MigrateOptionsAsync` / `HasRecordedOptions`), `QueryFailureGuard` (fallo rápido ante un replay
+  roto) y `503` con el motivo en `GET /patches/{...}`. Evidencia en `docs/e2e/spec-17-evidence.md`.
 - **Spec 10 (auto-versionado del `MonitorWorkflow`) diferido**, no descartado: la prioridad es
   probar el monitor contra un segundo proyecto real. Ver `Construction.md` §7 ítem 10 y §8.
 - Límites conocidos para reusarlo en otros proyectos: `specs/09-multi-target-e2e-validation.md`,
@@ -106,8 +110,11 @@ excepción) de que el monitor se va a observar a sí mismo.
 - El código de workflow no lee el entorno (no es determinístico): `MonitorWorkflow` recibe su
   configuración por la activity `ConfigActivities.GetMonitorRunConfig`, y `PatchStateWorkflow` /
   `PatchRegistryWorkflow` reciben `StateOptions` como argumento de arranque y lo arrastran en el
-  `Continue-As-New`. El único `FromEnvironment()` que queda es el fallback de ejecuciones vivas
-  arrancadas sin ese argumento (spec 14).
+  `Continue-As-New`. Ningún workflow llama a `FromEnvironment()` (spec 17): una ejecución antigua
+  arrancada sin ese argumento no hace `Continue-As-New` hasta que `TemporalPatchStateStore` le
+  graba las opciones (`MigrateOptionsAsync`, con un marker `Workflow.Patched`).
+- Una query que falla por replay roto (`WorkflowQueryFailedException`) no se reintenta
+  (`QueryFailureGuard`) y `GET /patches/{...}` la devuelve como `503` con el motivo (spec 17).
 - La notificación reclama la revisión **después** de un envío exitoso, nunca antes; el notificador
   compuesto falla si falla cualquier destino.
 - Cualquier cambio al código de `PatchStateWorkflow` o `PatchRegistryWorkflow` con ejecuciones
@@ -117,7 +124,7 @@ excepción) de que el monitor se va a observar a sí mismo.
 
 ```powershell
 dotnet build PatchMonitor.sln
-dotnet test  PatchMonitor.sln        # 361 tests, sin Docker
+dotnet test  PatchMonitor.sln        # 375 tests, sin Docker
 
 # stack del monitor, desde docker/
 docker compose build
