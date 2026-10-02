@@ -70,6 +70,9 @@ services:
     # Mayor que el GracefulShutdownTimeout (30s) de WorkerHost para que Docker deje drenar
     # las Activities en vuelo antes de mandar SIGKILL.
     stop_grace_period: 45s
+    # El arranque falla rápido si el cluster no está arriba (la conexión no reintenta sola);
+    # Docker reinicia el proceso hasta que el cluster responda (spec 15).
+    restart: unless-stopped
     environment:
       # Cluster existente en el host (ReleaseOrderDemo u otro), no un Temporal propio (spec 12):
       # el estado del monitor se aisla por namespace (`monitor`), no por cluster.
@@ -108,13 +111,15 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # Sin depends_on: condition: service_healthy — temporal ya no arranca en este perfil.
-    # NamespaceBootstrapper y la conexión del cliente reintentan solos si el cluster tarda
-    # en estar arriba.
+    # La conexión y NamespaceBootstrapper NO reintentan: si el cluster no está arriba, el
+    # proceso muere y `restart: unless-stopped` lo reinicia hasta que responda (spec 15).
 
   monitor-api:
     build:
       context: ..
       dockerfile: docker/Dockerfile.MonitorApi
+    # Misma razón que el worker: la API conecta de forma ansiosa al arrancar (spec 15).
+    restart: unless-stopped
     ports:
       - "5100:5100"
     environment:
