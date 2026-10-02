@@ -30,7 +30,7 @@ public class PatchRegistryWorkflowTests
         await worker.ExecuteAsync(async () =>
         {
             var handle = await env.Client.StartWorkflowAsync(
-                (IPatchRegistryWorkflow wf) => wf.RunAsync(null),
+                (IPatchRegistryWorkflow wf) => wf.RunAsync(null, null),
                 new WorkflowOptions(id: $"registry-wf-{Guid.NewGuid():N}", taskQueue: taskQueue));
 
             await body(handle);

@@ -7,7 +7,7 @@ namespace PatchMonitor.Tests.Notification;
 
 /// <summary>
 /// <see cref="CompositeNotifier"/> hace fan-out sobre <see cref="INotifier"/>: cada uno se
-/// invoca de forma independiente y solo lanza si todos fallaron.
+/// invoca de forma independiente y lanza si falló cualquiera (spec 14).
 /// </summary>
 public class CompositeNotifierTests
 {
@@ -26,16 +26,44 @@ public class CompositeNotifierTests
         DateTimeOffset.UtcNow);
 
     [Fact]
-    public async Task Un_notificador_falla_el_otro_igual_recibe_la_llamada_y_no_lanza()
+    public async Task Un_solo_notificador_que_falla_lanza_y_el_otro_igual_recibe_la_llamada()
     {
         var ok = new FakeNotifier("ok");
         var failing = new FakeNotifier("failing", fails: true);
         var composite = new CompositeNotifier(new INotifier[] { ok, failing });
 
-        await composite.NotifyAsync(Notification);
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => composite.NotifyAsync(Notification));
 
+        Assert.Contains("failing", ex.Message);
+        Assert.DoesNotContain("ok:", ex.Message);
         Assert.Single(ok.Calls);
         Assert.Single(failing.Calls);
+    }
+
+    [Fact]
+    public async Task Si_el_que_falla_va_primero_el_siguiente_igual_recibe_la_llamada()
+    {
+        var failing = new FakeNotifier("failing", fails: true);
+        var ok = new FakeNotifier("ok");
+        var composite = new CompositeNotifier(new INotifier[] { failing, ok });
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => composite.NotifyAsync(Notification));
+
+        Assert.Single(ok.Calls);
+    }
+
+    [Fact]
+    public async Task Si_ninguno_falla_no_lanza()
+    {
+        var first = new FakeNotifier("first");
+        var second = new FakeNotifier("second");
+        var composite = new CompositeNotifier(new INotifier[] { first, second });
+
+        await composite.NotifyAsync(Notification);
+
+        Assert.Single(first.Calls);
+        Assert.Single(second.Calls);
     }
 
     [Fact]

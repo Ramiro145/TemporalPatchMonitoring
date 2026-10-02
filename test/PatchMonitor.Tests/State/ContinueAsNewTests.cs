@@ -77,7 +77,7 @@ public class ContinueAsNewTests
             await worker.ExecuteAsync(async () =>
             {
                 var handle = await env.Client.StartWorkflowAsync(
-                    (IPatchStateWorkflow wf) => wf.RunAsync(Key, null),
+                    (IPatchStateWorkflow wf) => wf.RunAsync(Key, null, null),
                     new WorkflowOptions(id: $"can-state-wf-{Guid.NewGuid():N}", taskQueue: taskQueue));
 
                 var firstRunId = (await handle.DescribeAsync()).RunId;
@@ -107,6 +107,93 @@ public class ContinueAsNewTests
     }
 
     [Fact]
+    public async Task El_umbral_pasado_por_argumento_gana_sobre_el_entorno_y_el_continue_as_new_lo_arrastra()
+    {
+        // El entorno trae un umbral enorme: si el workflow lo leyera, nunca haría CAN.
+        await WithEnvAsync("1000", "1000", async () =>
+        {
+            await using var env = await WorkflowEnvironment.StartTimeSkippingAsync();
+            var taskQueue = $"can-state-arg-{Guid.NewGuid():N}";
+            using var worker = new TemporalWorker(
+                env.Client,
+                new TemporalWorkerOptions(taskQueue).AddWorkflow<PatchStateWorkflow>());
+
+            await worker.ExecuteAsync(async () =>
+            {
+                var options = new StateOptions(ContinueAsNewThreshold: 3, HistoryLimit: 2, taskQueue);
+                var handle = await env.Client.StartWorkflowAsync(
+                    (IPatchStateWorkflow wf) => wf.RunAsync(Key, null, options),
+                    new WorkflowOptions(id: $"can-state-arg-wf-{Guid.NewGuid():N}", taskQueue: taskQueue));
+
+                var firstRunId = (await handle.DescribeAsync()).RunId;
+
+                for (var i = 0; i < 3; i++)
+                {
+                    var at = T0.AddMinutes(i);
+                    await handle.SignalAsync(wf => wf.RecordAssessmentAsync(
+                        Assessment(Verdict(GateOutcome.Blocked, PatchPhase.Clean, at), at)));
+                }
+
+                var secondRunId = await WaitForNewRunAsync(handle, firstRunId!);
+
+                // La segunda ejecución recibió las opciones por el CAN, no del entorno: con el
+                // umbral del entorno (1000) este segundo salto nunca ocurriría.
+                for (var i = 3; i < 6; i++)
+                {
+                    var at = T0.AddMinutes(i);
+                    await handle.SignalAsync(wf => wf.RecordAssessmentAsync(
+                        Assessment(Verdict(GateOutcome.Blocked, PatchPhase.Clean, at), at)));
+                }
+
+                var thirdRunId = await WaitForNewRunAsync(handle, secondRunId);
+
+                Assert.NotEqual(firstRunId, secondRunId);
+                Assert.NotEqual(secondRunId, thirdRunId);
+            });
+        });
+    }
+
+    [Fact]
+    public async Task El_registry_con_umbral_por_argumento_hace_continue_as_new_sin_leer_el_entorno()
+    {
+        await WithEnvAsync("1000", null, async () =>
+        {
+            await using var env = await WorkflowEnvironment.StartTimeSkippingAsync();
+            var taskQueue = $"can-registry-arg-{Guid.NewGuid():N}";
+            using var worker = new TemporalWorker(
+                env.Client,
+                new TemporalWorkerOptions(taskQueue).AddWorkflow<PatchRegistryWorkflow>());
+
+            await worker.ExecuteAsync(async () =>
+            {
+                var options = new StateOptions(ContinueAsNewThreshold: 3, HistoryLimit: 2, taskQueue);
+                var handle = await env.Client.StartWorkflowAsync(
+                    (IPatchRegistryWorkflow wf) => wf.RunAsync(null, options),
+                    new WorkflowOptions(id: $"can-registry-arg-wf-{Guid.NewGuid():N}", taskQueue: taskQueue));
+
+                var firstRunId = (await handle.DescribeAsync()).RunId;
+
+                await handle.SignalAsync(wf => wf.RegisterAsync(new PatchKey("default", "A", "a")));
+                await handle.SignalAsync(wf => wf.RegisterAsync(new PatchKey("default", "B", "b")));
+                await handle.SignalAsync(wf => wf.RegisterAsync(new PatchKey("default", "C", "c")));
+
+                var secondRunId = await WaitForNewRunAsync(handle, firstRunId!);
+
+                // El umbral viaja en el CAN: tres signals más provocan un segundo salto.
+                await handle.SignalAsync(wf => wf.RegisterAsync(new PatchKey("default", "D", "d")));
+                await handle.SignalAsync(wf => wf.RegisterAsync(new PatchKey("default", "E", "e")));
+                await handle.SignalAsync(wf => wf.RegisterAsync(new PatchKey("default", "F", "f")));
+
+                var thirdRunId = await WaitForNewRunAsync(handle, secondRunId);
+                var state = await handle.QueryAsync(wf => wf.List());
+
+                Assert.NotEqual(secondRunId, thirdRunId);
+                Assert.Equal(6, state.Keys.Count);
+            });
+        });
+    }
+
+    [Fact]
     public async Task El_registry_hace_continue_as_new_arrastrando_el_set_completo()
     {
         await WithEnvAsync("3", null, async () =>
@@ -120,7 +207,7 @@ public class ContinueAsNewTests
             await worker.ExecuteAsync(async () =>
             {
                 var handle = await env.Client.StartWorkflowAsync(
-                    (IPatchRegistryWorkflow wf) => wf.RunAsync(null),
+                    (IPatchRegistryWorkflow wf) => wf.RunAsync(null, null),
                     new WorkflowOptions(id: $"can-registry-wf-{Guid.NewGuid():N}", taskQueue: taskQueue));
 
                 var firstRunId = (await handle.DescribeAsync()).RunId;

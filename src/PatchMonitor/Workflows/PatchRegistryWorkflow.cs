@@ -24,9 +24,11 @@ public class PatchRegistryWorkflow : IPatchRegistryWorkflow
     private int _signalsSinceStart;
 
     [WorkflowRun]
-    public async Task RunAsync(PatchRegistryState? carryover)
+    public async Task RunAsync(PatchRegistryState? carryover, StateOptions? options = null)
     {
-        _options = StateOptions.FromEnvironment();
+        // Argumento de arranque arrastrado por el Continue-As-New; el entorno es solo el camino
+        // legado de ejecuciones vivas arrancadas sin él (spec 14).
+        _options = options ?? StateOptions.FromEnvironment();
         _updatedAt = Workflow.UtcNow;
 
         if (carryover is not null)
@@ -44,7 +46,7 @@ public class PatchRegistryWorkflow : IPatchRegistryWorkflow
                   && Workflow.AllHandlersFinished);
 
         throw Workflow.CreateContinueAsNewException(
-            (IPatchRegistryWorkflow wf) => wf.RunAsync(List()));
+            (IPatchRegistryWorkflow wf) => wf.RunAsync(List(), _options));
     }
 
     [WorkflowSignal]

@@ -38,7 +38,7 @@ public sealed class TemporalPatchStateStore : IPatchStateStore
         // siguientes solo lo señalan.
         var handle = await SignalWithStartAsync(
             input.Key.ToWorkflowId(),
-            (IPatchStateWorkflow wf) => wf.RunAsync(input.Key, null),
+            (IPatchStateWorkflow wf) => wf.RunAsync(input.Key, null, _options),
             (IPatchStateWorkflow wf) => wf.RecordAssessmentAsync(input)).ConfigureAwait(false);
 
         // Indexar la clave en el registry, también por signal-with-start.
@@ -86,7 +86,7 @@ public sealed class TemporalPatchStateStore : IPatchStateStore
     {
         await SignalWithStartAsync(
             StateOptions.RegistryWorkflowId,
-            (IPatchRegistryWorkflow wf) => wf.RunAsync(null),
+            (IPatchRegistryWorkflow wf) => wf.RunAsync(null, _options),
             (IPatchRegistryWorkflow wf) => wf.RegisterAsync(key)).ConfigureAwait(false);
     }
 
@@ -189,7 +189,7 @@ public sealed class TemporalPatchStateStore : IPatchStateStore
         try
         {
             return await client.StartWorkflowAsync(
-                (IPatchStateWorkflow wf) => wf.RunAsync(key, null), options).ConfigureAwait(false);
+                (IPatchStateWorkflow wf) => wf.RunAsync(key, null, _options), options).ConfigureAwait(false);
         }
         catch (WorkflowAlreadyStartedException)
         {

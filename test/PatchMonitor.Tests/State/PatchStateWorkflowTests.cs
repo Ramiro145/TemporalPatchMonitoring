@@ -43,7 +43,7 @@ public class PatchStateWorkflowTests
         await worker.ExecuteAsync(async () =>
         {
             var handle = await env.Client.StartWorkflowAsync(
-                (IPatchStateWorkflow wf) => wf.RunAsync(Key, null),
+                (IPatchStateWorkflow wf) => wf.RunAsync(Key, null, null),
                 new WorkflowOptions(id: $"state-wf-{Guid.NewGuid():N}", taskQueue: taskQueue));
 
             await body(handle);

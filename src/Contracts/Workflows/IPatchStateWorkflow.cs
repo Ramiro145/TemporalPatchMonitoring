@@ -24,8 +24,13 @@ public interface IPatchStateWorkflow
     /// Estado arrastrado desde la ejecución anterior tras un <c>Continue-As-New</c>, o
     /// <c>null</c> en el primer arranque.
     /// </param>
+    /// <param name="options">
+    /// Opciones del estado durable con las que corre esta ejecución (spec 14). El
+    /// <c>Continue-As-New</c> las arrastra. <c>null</c> solo en ejecuciones vivas arrancadas antes
+    /// de este argumento: el workflow cae entonces al entorno, para que su replay no cambie.
+    /// </param>
     [WorkflowRun]
-    Task RunAsync(PatchKey key, PatchState? carryover);
+    Task RunAsync(PatchKey key, PatchState? carryover, StateOptions? options);
 
     /// <summary>Registra un assessment de la pasada de monitoreo; avanza <c>AssessmentCount</c> y, si el veredicto cambió, <c>Revision</c>.</summary>
     [WorkflowSignal]

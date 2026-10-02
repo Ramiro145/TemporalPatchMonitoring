@@ -14,8 +14,13 @@ namespace Contracts.Workflows;
 public interface IPatchRegistryWorkflow
 {
     /// <param name="carryover">Set de claves arrastrado tras un <c>Continue-As-New</c>, o <c>null</c> en el primer arranque.</param>
+    /// <param name="options">
+    /// Opciones con las que corre esta ejecución (spec 14); el <c>Continue-As-New</c> las arrastra.
+    /// <c>null</c> solo en ejecuciones vivas arrancadas antes de este argumento: el workflow cae
+    /// entonces al entorno, para que su replay no cambie.
+    /// </param>
     [WorkflowRun]
-    Task RunAsync(PatchRegistryState? carryover);
+    Task RunAsync(PatchRegistryState? carryover, StateOptions? options);
 
     /// <summary>Agrega una clave al índice. Idempotente: registrar la misma clave N veces deja una sola entrada.</summary>
     [WorkflowSignal]

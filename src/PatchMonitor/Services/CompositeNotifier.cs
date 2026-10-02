@@ -4,8 +4,9 @@ namespace PatchMonitor.Services;
 
 /// <summary>
 /// Fan-out sobre todos los <see cref="INotifier"/> registrados por DI: invoca cada uno de
-/// forma independiente, acumula los mensajes de los que fallaron y lanza solo si
-/// <b>todos</b> fallaron. Que un destino esté caído no puede tapar que otro sí notificó.
+/// forma independiente (que uno falle no impide que los demás reciban la llamada), acumula los
+/// mensajes de los que fallaron y lanza si falló <b>cualquiera</b>. El log local nunca falla, así
+/// que exigir que fallen todos dejaba a un webhook caído reportado como enviado (spec 14).
 /// </summary>
 public sealed class CompositeNotifier : INotifier
 {
@@ -37,10 +38,10 @@ public sealed class CompositeNotifier : INotifier
             }
         }
 
-        if (failures.Count > 0 && failures.Count == _notifiers.Count)
+        if (failures.Count > 0)
         {
             throw new InvalidOperationException(
-                $"Todos los notificadores fallaron: {string.Join("; ", failures)}");
+                $"Fallaron {failures.Count} de {_notifiers.Count} notificadores: {string.Join("; ", failures)}");
         }
     }
 }

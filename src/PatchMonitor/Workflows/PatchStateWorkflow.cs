@@ -39,16 +39,18 @@ public class PatchStateWorkflow : IPatchStateWorkflow
     /// default y tirar <see cref="NullReferenceException"/>.
     /// </summary>
     [WorkflowInit]
-    public PatchStateWorkflow(PatchKey key, PatchState? carryover)
+    public PatchStateWorkflow(PatchKey key, PatchState? carryover, StateOptions? options = null)
     {
-        // Se lee una vez por ejecución. Tras un Continue-As-New la nueva instancia
-        // vuelve a leer el entorno, así un cambio de umbral aplica sin redeploy del código.
-        _options = StateOptions.FromEnvironment();
+        // Las opciones llegan como argumento de arranque y el Continue-As-New las arrastra:
+        // leer el entorno acá no sería determinístico (spec 14). El fallback al entorno es solo
+        // el camino legado de ejecuciones vivas arrancadas sin el argumento; tras su próximo
+        // Continue-As-New ya llevan las opciones y quedan determinísticas.
+        _options = options ?? StateOptions.FromEnvironment();
         _state = carryover ?? PatchState.Initial(key);
     }
 
     [WorkflowRun]
-    public async Task RunAsync(PatchKey key, PatchState? carryover)
+    public async Task RunAsync(PatchKey key, PatchState? carryover, StateOptions? options = null)
     {
         // Se espera al umbral de assessments Y a que no haya handlers en vuelo: un
         // Continue-As-New con un update de override a medio aplicar perdería la actualización.
@@ -57,7 +59,7 @@ public class PatchStateWorkflow : IPatchStateWorkflow
                   && Workflow.AllHandlersFinished);
 
         throw Workflow.CreateContinueAsNewException(
-            (IPatchStateWorkflow wf) => wf.RunAsync(key, _state.ForCarryover(_options.HistoryLimit)));
+            (IPatchStateWorkflow wf) => wf.RunAsync(key, _state.ForCarryover(_options.HistoryLimit), _options));
     }
 
     [WorkflowSignal]
