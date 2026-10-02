@@ -97,6 +97,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<INotifier>(sp => sp.GetRequiredService<CompositeNotifier>());
         services.AddSingleton<NotificationActivities>();
 
+        // Configuración de la pasada entregada a MonitorWorkflow por Activity (spec 14): el
+        // workflow no puede leer el entorno.
+        services.AddSingleton<ConfigActivities>();
+
         return services;
     }
 }

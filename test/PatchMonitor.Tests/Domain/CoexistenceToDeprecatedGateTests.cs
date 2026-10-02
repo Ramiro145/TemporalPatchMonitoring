@@ -63,6 +63,21 @@ public class CoexistenceToDeprecatedGateTests
     }
 
     [Fact]
+    public void Una_ContinuedAsNew_sin_marker_con_sucesora_Running_con_marker_da_Ready()
+    {
+        // En Temporal una run CONTINUED_AS_NEW está cerrada; su sucesora Running ya se evalúa
+        // por su cuenta (spec 14).
+        var set = Set(
+            Closed(ExecutionStatus.ContinuedAsNew).WithoutMarker(),
+            Open().WithMarker());
+
+        var verdict = _gate.Evaluate(Key, set);
+
+        Assert.Equal(GateOutcome.Ready, verdict.Outcome);
+        Assert.Equal(0, verdict.BlockingExecutionCount);
+    }
+
+    [Fact]
     public void Una_abierta_sin_inspeccionar_da_Inconclusive()
     {
         var set = Set(

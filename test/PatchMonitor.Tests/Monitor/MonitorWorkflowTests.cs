@@ -1,3 +1,4 @@
+using Contracts;
 using Contracts.Discovery;
 using Contracts.Domain.Gates;
 using Contracts.Monitor;
@@ -28,7 +29,10 @@ public class MonitorWorkflowTests
         new("default", TargetHost: "temporal:7233", LookbackDays: 7, MaxExecutions: 500, MaxHistories: 200);
 
     private static async Task<MonitorRunSummary> RunAsync(
-        IExecutionSource source, FakePatchStateStore store, IEnumerable<INotifier>? notifiers = null)
+        IExecutionSource source,
+        FakePatchStateStore store,
+        IEnumerable<INotifier>? notifiers = null,
+        MonitorRunConfig? config = null)
     {
         await using var env = await WorkflowEnvironment.StartTimeSkippingAsync();
         var taskQueue = $"monitor-{Guid.NewGuid():N}";
@@ -54,6 +58,25 @@ public class MonitorWorkflowTests
         options.AddAllActivities(phaseActivities);
         options.AddAllActivities(stateActivities);
         options.AddAllActivities(notificationActivities);
+
+        // Configuración de la pasada por Activity, sin tocar el entorno del proceso (spec 14).
+        var runConfig = config ?? new MonitorRunConfig(
+            MonitorOptions.DefaultMaxPatchesPerRun,
+            NotificationsEnabled: true,
+            NotificationOptions.DefaultMaxAttempts);
+        options.AddAllActivities(new ConfigActivities(
+            new MonitorOptions(
+                MonitorOptions.DefaultScheduleId,
+                TimeSpan.FromMinutes(MonitorOptions.DefaultIntervalMinutes),
+                TimeSpan.FromMinutes(MonitorOptions.DefaultCatchupWindowMinutes),
+                runConfig.MaxPatchesPerRun,
+                TaskQueues.PatchMonitor),
+            new NotificationOptions(
+                runConfig.NotificationsEnabled,
+                WebhookUrl: null,
+                WebhookAuthHeader: null,
+                TimeSpan.FromSeconds(NotificationOptions.DefaultWebhookTimeoutSeconds),
+                runConfig.NotifierMaxAttempts)));
 
         using var worker = new TemporalWorker(env.Client, options);
 
@@ -118,24 +141,37 @@ public class MonitorWorkflowTests
     [Fact]
     public async Task MaxPatchesPerRun_acota_los_assessments_sin_afectar_lo_descubierto()
     {
-        var saved = Environment.GetEnvironmentVariable("MONITOR_MAX_PATCHES_PER_RUN");
-        try
-        {
-            Environment.SetEnvironmentVariable("MONITOR_MAX_PATCHES_PER_RUN", "1");
+        var source = new FakeExecutionSource().Seed(
+            HistoryFixtures.OpenWithAttribute("core-patch", "OrderWorkflow"),
+            HistoryFixtures.OpenWithAttribute("core-patch", "ShippingWorkflow"));
+        var config = new MonitorRunConfig(
+            MaxPatchesPerRun: 1,
+            NotificationsEnabled: true,
+            NotifierMaxAttempts: NotificationOptions.DefaultMaxAttempts);
 
-            var source = new FakeExecutionSource().Seed(
-                HistoryFixtures.OpenWithAttribute("core-patch", "OrderWorkflow"),
-                HistoryFixtures.OpenWithAttribute("core-patch", "ShippingWorkflow"));
+        var summary = await RunAsync(source, new FakePatchStateStore(), config: config);
 
-            var summary = await RunAsync(source, new FakePatchStateStore());
+        Assert.Equal(2, summary.PatchesDiscovered);
+        Assert.Equal(1, summary.PatchesAssessed);
+    }
 
-            Assert.Equal(2, summary.PatchesDiscovered);
-            Assert.Equal(1, summary.PatchesAssessed);
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable("MONITOR_MAX_PATCHES_PER_RUN", saved);
-        }
+    [Fact]
+    public async Task Con_notificaciones_deshabilitadas_en_la_configuracion_no_se_notifica()
+    {
+        var source = new FakeExecutionSource().Seed(
+            HistoryFixtures.OpenWithAttribute("core-patch", "OrderWorkflow"));
+        var notifier = new FakeNotifier("log");
+        var config = new MonitorRunConfig(
+            MonitorOptions.DefaultMaxPatchesPerRun,
+            NotificationsEnabled: false,
+            NotifierMaxAttempts: NotificationOptions.DefaultMaxAttempts);
+
+        var summary = await RunAsync(
+            source, new FakePatchStateStore(), new INotifier[] { notifier }, config);
+
+        Assert.True(summary.VerdictsChanged > 0);
+        Assert.Equal(0, summary.NotificationsSent);
+        Assert.Equal(0, summary.NotificationsFailed);
     }
 
     [Fact]

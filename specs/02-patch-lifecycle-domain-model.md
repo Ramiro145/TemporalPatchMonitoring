@@ -47,8 +47,11 @@ Deprecated = 2, Clean = 3 }`, las tres fases de `Construction.md` §1 más el va
 string PatchId)` con `ToWorkflowId()`: el id determinístico y saneado que el spec 05 va a usar como
   `WorkflowId` del entity workflow (ver Modelo de datos).
 - **`src/Contracts/Domain/ExecutionStatus.cs`** — `enum ExecutionStatus` con los estados de una
-  ejecución de Temporal y la propiedad de extensión `IsOpen()` (`Running` y `ContinuedAsNew`
-  abiertos; el resto cerrados).
+  ejecución de Temporal y la propiedad de extensión `IsOpen()` (solo `Running` abierto; el resto
+  cerrados). **Corregido por el [spec 14](14-audit-high-severity-fixes.md):** originalmente
+  `ContinuedAsNew` también contaba como abierta, pero en Temporal esa run está cerrada y su
+  sucesora aparece por separado como `Running`; contarla bloqueaba los gates durante toda la
+  ventana de `DISCOVERY_LOOKBACK_DAYS`.
 - **`src/Contracts/Domain/MarkerPresence.cs`** — `enum MarkerPresence { Unknown = 0, Absent = 1,
 Present = 2, PresentDeprecated = 3 }`. `Present` = marker sin `deprecated`; `PresentDeprecated` =
   marker con el flag puesto; `Unknown` = historia no inspeccionada o truncada.
@@ -330,6 +333,8 @@ Rama `spec-02-patch-lifecycle-domain-model`.
 1. **`IsOpen()` es método de extensión, no "propiedad de extensión".** C# en `net8.0` no admite
    propiedades de extensión sobre un enum; `ExecutionStatusExtensions.IsOpen(this ExecutionStatus)`
    conserva el nombre y la semántica de la spec (`Running` y `ContinuedAsNew` abiertos).
+   *Corrección (spec 14):* la semántica vigente es solo `Running` abierto; `ContinuedAsNew` es una
+   run cerrada y su sucesora `Running` se evalúa por su cuenta.
 2. **El recorte de `BlockingSample` a 5 vive solo en `PhaseVerdict.Blocked(...)`**, no también en
    cada gate: un único punto de control. Los gates pasan la lista completa de `workflowId` y el
    conteo total; el factory recorta.

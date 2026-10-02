@@ -47,7 +47,7 @@ await WorkerHost.RunAsync<HealthWorkflow>(
     activityTypes: new[]
     {
         typeof(DiscoveryActivities), typeof(PhaseActivities), typeof(PatchStateActivities),
-        typeof(NotificationActivities),
+        typeof(NotificationActivities), typeof(ConfigActivities),
     },
     additionalWorkflowTypes: new[]
     {

@@ -13,6 +13,7 @@ namespace PatchMonitor.Tests.State;
 /// El registry singleton sobre <see cref="WorkflowEnvironment.StartTimeSkippingAsync"/>: sin
 /// Docker ni SQL. La primera corrida descarga el binario del test-server de Temporal.
 /// </summary>
+[Collection(EnvVarCollection.Name)]
 public class PatchRegistryWorkflowTests
 {
     private static readonly PatchKey KeyA = new("default", "OrderWorkflow", "order-v2");

@@ -1,5 +1,7 @@
 using Contracts.Monitor;
+using Contracts.Notification;
 using Microsoft.Extensions.DependencyInjection;
+using PatchMonitor.Activities;
 using PatchMonitor.Infrastructure;
 using Xunit;
 
@@ -17,5 +19,19 @@ public class MonitorRegistrationTests
         using var provider = new ServiceCollection().AddPatchMonitorServices().BuildServiceProvider();
 
         Assert.NotNull(provider.GetService<MonitorOptions>());
+    }
+
+    [Fact]
+    public void AddPatchMonitorServices_resuelve_ConfigActivities_con_la_configuracion_de_la_pasada()
+    {
+        using var provider = new ServiceCollection().AddPatchMonitorServices().BuildServiceProvider();
+
+        var activities = provider.GetService<ConfigActivities>();
+
+        Assert.NotNull(activities);
+        var config = activities.GetMonitorRunConfig();
+        Assert.Equal(provider.GetRequiredService<MonitorOptions>().MaxPatchesPerRun, config.MaxPatchesPerRun);
+        Assert.Equal(provider.GetRequiredService<NotificationOptions>().Enabled, config.NotificationsEnabled);
+        Assert.Equal(provider.GetRequiredService<NotificationOptions>().MaxAttempts, config.NotifierMaxAttempts);
     }
 }

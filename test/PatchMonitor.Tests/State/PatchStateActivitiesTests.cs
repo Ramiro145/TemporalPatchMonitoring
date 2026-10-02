@@ -17,6 +17,7 @@ namespace PatchMonitor.Tests.State;
 /// <see cref="WorkflowEnvironment.StartTimeSkippingAsync"/>. El foco es la hidratación del
 /// <see cref="IPhaseOverrideStore"/> de corrida.
 /// </summary>
+[Collection(EnvVarCollection.Name)]
 public class PatchStateActivitiesTests
 {
     private static readonly PatchKey KeyA = new("default", "OrderWorkflow", "order-v2");

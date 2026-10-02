@@ -20,10 +20,11 @@ public enum ExecutionStatus
 public static class ExecutionStatusExtensions
 {
     /// <summary>
-    /// <c>true</c> si la ejecución sigue abierta. Solo <see cref="ExecutionStatus.Running"/> y
-    /// <see cref="ExecutionStatus.ContinuedAsNew"/> cuentan como abiertas; el resto (incluido
-    /// <see cref="ExecutionStatus.Unknown"/>) se trata como cerrado.
+    /// <c>true</c> si la ejecución sigue abierta. Solo <see cref="ExecutionStatus.Running"/> cuenta
+    /// como abierta; el resto (incluido <see cref="ExecutionStatus.Unknown"/>) se trata como
+    /// cerrado. Una run <see cref="ExecutionStatus.ContinuedAsNew"/> está cerrada en Temporal: su
+    /// sucesora aparece por separado como <c>Running</c> y se evalúa por su cuenta (spec 14).
     /// </summary>
     public static bool IsOpen(this ExecutionStatus status) =>
-        status is ExecutionStatus.Running or ExecutionStatus.ContinuedAsNew;
+        status is ExecutionStatus.Running;
 }

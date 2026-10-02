@@ -68,6 +68,18 @@ public class DeprecatedToCleanGateTests
     }
 
     [Fact]
+    public void Una_ContinuedAsNew_con_marker_con_sucesora_Running_sin_marker_da_Ready()
+    {
+        // La run previa está cerrada en Temporal; la sucesora Running ya no trae el marker
+        // (spec 14).
+        var set = Set(
+            Closed(ExecutionStatus.ContinuedAsNew).WithMarker(),
+            Open().WithoutMarker());
+
+        Assert.Equal(GateOutcome.Ready, _gate.Evaluate(Key, set).Outcome);
+    }
+
+    [Fact]
     public void Una_abierta_sin_inspeccionar_da_Inconclusive()
     {
         var set = Set(Open().Uninspected());

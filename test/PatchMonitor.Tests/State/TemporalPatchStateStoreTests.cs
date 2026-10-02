@@ -14,6 +14,7 @@ namespace PatchMonitor.Tests.State;
 /// <see cref="TemporalPatchStateStore"/> contra <see cref="WorkflowEnvironment.StartTimeSkippingAsync"/>:
 /// el store habla con un worker real que corre los dos entity workflows, sin Docker ni SQL.
 /// </summary>
+[Collection(EnvVarCollection.Name)]
 public class TemporalPatchStateStoreTests
 {
     private static readonly PatchKey KeyA = new("default", "OrderWorkflow", "order-v2");

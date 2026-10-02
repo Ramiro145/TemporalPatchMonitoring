@@ -29,8 +29,11 @@ public class MonitorWorkflow : IMonitorWorkflow
     [WorkflowRun]
     public async Task<MonitorRunSummary> RunAsync()
     {
-        var options = MonitorOptions.FromEnvironment();
-        var notificationOptions = NotificationOptions.FromEnvironment();
+        // La configuración llega por Activity (queda en la historia) y no del entorno: leerlo
+        // acá no sería determinístico (spec 14).
+        var config = await Workflow
+            .ExecuteActivityAsync((ConfigActivities a) => a.GetMonitorRunConfig(), Options)
+            .ConfigureAwait(true);
         var startedAt = Workflow.UtcNow;
 
         var overridesLoaded = await Workflow
@@ -47,7 +50,7 @@ public class MonitorWorkflow : IMonitorWorkflow
         var notificationsFailed = 0;
         var errors = new List<string>();
 
-        foreach (var patch in discovered.Take(options.MaxPatchesPerRun))
+        foreach (var patch in discovered.Take(config.MaxPatchesPerRun))
         {
             try
             {
@@ -73,7 +76,7 @@ public class MonitorWorkflow : IMonitorWorkflow
                 {
                     verdictsChanged++;
 
-                    if (notificationOptions.Enabled)
+                    if (config.NotificationsEnabled)
                     {
                         try
                         {
@@ -81,7 +84,7 @@ public class MonitorWorkflow : IMonitorWorkflow
                             var notifyOptions = new ActivityOptions
                             {
                                 StartToCloseTimeout = TimeSpan.FromMinutes(2),
-                                RetryPolicy = new RetryPolicy { MaximumAttempts = notificationOptions.MaxAttempts },
+                                RetryPolicy = new RetryPolicy { MaximumAttempts = config.NotifierMaxAttempts },
                             };
 
                             var sent = await Workflow

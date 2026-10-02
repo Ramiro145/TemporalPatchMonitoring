@@ -16,6 +16,7 @@ namespace PatchMonitor.Tests.State;
 /// <see cref="WorkflowEnvironment.StartTimeSkippingAsync"/>. El <c>Continue-As-New</c> y los
 /// updates de override se prueban en sus propios archivos.
 /// </summary>
+[Collection(EnvVarCollection.Name)]
 public class PatchStateWorkflowTests
 {
     private static readonly PatchKey Key = new("default", "OrderWorkflow", "order-v2");
