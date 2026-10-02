@@ -149,7 +149,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.MonitorWeb
     ports:
-      - "5101:80"
+      - "5101:8080"
     depends_on:
       - monitor-api
 

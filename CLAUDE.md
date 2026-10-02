@@ -30,7 +30,7 @@ cambios de arquitectura.
 
 ## Estado actual
 
-- Specs **01 a 09, 11, 12 y 13 implementados** (`specs/`). El spec 09 validó el monitor end-to-end
+- Specs **01 a 09, 11, 12 y 13 implementados** (más los 14 a 16 de la auditoría, abajo) (`specs/`). El spec 09 validó el monitor end-to-end
   contra el `ReleaseOrderDemo` real (evidencia en `docs/e2e/evidence/`). El spec 11 agregó el
   dashboard web (`web/`, ver `## Frontend` más abajo). El spec 12 movió el monitor a apoyarse en un
   cluster de Temporal existente, aislado por namespace (`monitor` propio / `default` observado) en
@@ -46,9 +46,15 @@ cambios de arquitectura.
   `EnsureScheduleAsync` es create-or-update (`ScheduleEnsureResult`), `restart: unless-stopped`,
   `ResettableAsyncLazy` en lugar de `Lazy<Task<ITemporalClient>>`, `Clean` conservado sin evidencia
   nueva (`Resolve`/`AssessPatch` reciben el estado previo), `DISCOVERY_MAX_HISTORIES` = 500,
-  `GET /runs` por ventana de 24 h y rotación de patches (`PatchRotation`, `PatchesSkipped`). Los
-  bajos (B-1 a B-8) más la seguridad opcional (M-1, B-7) quedan para el spec 16 (`Construction.md`
-  §7, pendiente de `/spec`).
+  `GET /runs` por ventana de 24 h y rotación de patches (`PatchRotation`, `PatchesSkipped`).
+- **Spec 16** (correcciones de severidad baja, B-1 a B-8 más el recorte de `patchId` del Tier 1):
+  `PatchSummaryResponse.Error` con el motivo de un patch ilegible, `PatchKey.ToWorkflowId()` con hash
+  solo si el saneado cambió algo, Tier 1 con historia ilegible ⇒ `Unknown` y `patchId` crudo de
+  `TemporalChangeVersion` (sin `ParsePatchId`), `PhaseEvaluator` lanza con `Clean`/`Unknown`,
+  `GET /patches` en paralelo acotado (`BoundedParallel`, `API_LIST_PATCHES_CONCURRENCY`),
+  `WorkflowValidator` devuelve `NotFound` por código, `shadcn` en `devDependencies` y contenedores
+  no-root (dashboard con `nginx-unprivileged` en `8080`). **M-1 (token de la API) quedó fuera, sin
+  spec**: se documenta como límite conocido en el README.
 - **Spec 10 (auto-versionado del `MonitorWorkflow`) diferido**, no descartado: la prioridad es
   probar el monitor contra un segundo proyecto real. Ver `Construction.md` §7 ítem 10 y §8.
 - Límites conocidos para reusarlo en otros proyectos: `specs/09-multi-target-e2e-validation.md`,
@@ -111,7 +117,7 @@ excepción) de que el monitor se va a observar a sí mismo.
 
 ```powershell
 dotnet build PatchMonitor.sln
-dotnet test  PatchMonitor.sln        # 344 tests, sin Docker
+dotnet test  PatchMonitor.sln        # 361 tests, sin Docker
 
 # stack del monitor, desde docker/
 docker compose build

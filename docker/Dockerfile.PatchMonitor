@@ -23,4 +23,6 @@ RUN dotnet publish -c Release -o /app/publish
 FROM base AS final
 WORKDIR /app
 COPY --from=build /app/publish .
+# No-root (spec 16, B-7): el usuario "app" ya viene en la imagen aspnet:8.0.
+USER $APP_UID
 ENTRYPOINT ["dotnet", "PatchMonitor.dll"]

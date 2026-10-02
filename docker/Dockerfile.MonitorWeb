@@ -6,8 +6,9 @@ RUN npm ci
 COPY ./web .
 RUN npm run build
 
-# Etapa final: nginx sirviendo el build estático
-FROM nginx:alpine AS final
+# Etapa final: nginx sin privilegios (spec 16, B-7) sirviendo el build estático. Corre como
+# usuario no-root y escucha en 8080 (un puerto <1024 exigiría root).
+FROM nginxinc/nginx-unprivileged:alpine AS final
 COPY --from=build /src/web/dist /usr/share/nginx/html
 COPY ./docker/nginx.conf /etc/nginx/conf.d/default.conf
-EXPOSE 80
+EXPOSE 8080

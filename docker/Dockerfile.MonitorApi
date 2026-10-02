@@ -19,10 +19,11 @@ COPY ./src/MonitorApi ./MonitorApi
 WORKDIR /src/MonitorApi
 RUN dotnet publish -c Release -o /app/publish
 
-EXPOSE 5100
-
 # Etapa final: runtime ASP.NET
 FROM base AS final
 WORKDIR /app
+EXPOSE 5100
 COPY --from=build /app/publish .
+# No-root (spec 16, B-7): el usuario "app" ya viene en la imagen aspnet:8.0; 5100 no es privilegiado.
+USER $APP_UID
 ENTRYPOINT ["dotnet", "MonitorApi.dll"]

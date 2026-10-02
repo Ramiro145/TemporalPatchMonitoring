@@ -169,7 +169,10 @@ tienen patches (ver [Límites conocidos](#límites-conocidos)).
 
 **1. Descubrimiento en dos niveles.** Lista las ejecuciones abiertas y las cerradas dentro de la
 ventana `DISCOVERY_LOOKBACK_DAYS`. Nivel 1: lee el search attribute `TemporalChangeVersion` que
-Temporal escribe al llamar `Patched`. Nivel 2: lee la Event History de cada ejecución buscando el
+Temporal escribe al llamar `Patched`; cada entrada es el `patchId` **crudo** (sin sufijo de versión,
+así que `rot-1` es `rot-1`). Si la Event History de esa ejecución no se pudo leer, el patch se
+descubre igual pero esa ejecución cuenta como no inspeccionada (`Unknown`) y el gate da
+`Inconclusive` en vez de asumir presencia. Nivel 2: lee la Event History de cada ejecución buscando el
 marker `core_patch`, que es lo único que distingue fase 1 de fase 2 (el flag `deprecated`).
 Una ejecución que no trae el marker propio de un patch se le atribuye como *pre-patch* a ese patch
 puntual — **por patch, no por workflow type** (spec 13): un workflow con varios patches activos a
@@ -251,6 +254,11 @@ Las respuestas usan números para los enums:
 | `phase`, `nextPhase` | `0` Unknown · `1` Coexistence · `2` Deprecated · `3` Clean |
 | `outcome` | `0` Inconclusive · `1` Blocked · `2` Ready · `null` en fase final |
 | `source` | `0` Inferred · `1` Override |
+
+En `GET /patches`, un patch que está en el registry pero cuyo estado no se pudo leer sale con
+`phase: 0` y el motivo en `error` (`null` en un patch leído normalmente); el dashboard lo muestra
+como "Ilegible" con el motivo en un tooltip. Las lecturas del listado van en paralelo, acotadas por
+`API_LIST_PATCHES_CONCURRENCY`.
 
 Ejemplo — revisar un patch después de forzar una pasada:
 
@@ -343,6 +351,7 @@ Todas las variables son opcionales; un valor ausente, no numérico o no positivo
 | `NOTIFIER_MAX_ATTEMPTS` | `3` | Intentos de la notificación dentro de una pasada; si se agotan, se reintenta en el tick siguiente |
 | `API_MAX_LIST_PATCHES` | `100` | Tope de `GET /patches` |
 | `API_OVERRIDE_DEFAULT_TTL_HOURS` | `24` | Vencimiento por defecto de un override |
+| `API_LIST_PATCHES_CONCURRENCY` | `8` | Lecturas de estado simultáneas de `GET /patches` |
 | `API_MAX_LIST_RUNS` | `20` | Tope de `GET /runs` |
 | `API_CORS_ORIGINS` | `http://localhost:5173` | Orígenes permitidos por CORS (separados por coma); solo importa para `npm run dev` sin el proxy de Vite |
 
@@ -361,7 +370,7 @@ test/PatchMonitor.Tests/   xUnit + entorno time-skipping de Temporalio (sin Dock
 docker/          docker-compose.yml, overlay e2e, Dockerfiles y nginx.conf del dashboard.
 scripts/e2e/     seed-orders.ps1, drain-orders.ps1, snapshot.ps1 (validación contra ReleaseOrderDemo).
 docs/e2e/        Guía de fases aplicada y evidencia JSON del recorrido end-to-end.
-specs/           Specs 01-11 (Spec-Driven Design).
+specs/           Specs 01-16 (Spec-Driven Design).
 Construction.md  Hoja de ruta, decisiones cerradas y criterio de "listo".
 ```
 
@@ -369,7 +378,7 @@ Construction.md  Hoja de ruta, decisiones cerradas y criterio de "listo".
 
 ```powershell
 dotnet build PatchMonitor.sln
-dotnet test  PatchMonitor.sln     # 344 tests, sin Docker
+dotnet test  PatchMonitor.sln     # 361 tests, sin Docker
 ```
 
 La primera corrida de tests descarga el test-server de Temporal (una vez; queda cacheado).
@@ -411,7 +420,25 @@ Cero cambios de código en el monitor para apuntarlo ahí. El procedimiento est�
 - **`GET /runs` mira las últimas 24 horas** (con respaldo a un escaneo por tipo si hay menos corridas
   que `API_MAX_LIST_RUNS`), así que el panel de últimas corridas muestra siempre las más recientes.
 - **Convención de marker `core_patch`**: la emiten los SDKs basados en sdk-core (como el de .NET).
-  Con otro SDK, verificá la convención antes.
+  Con otro SDK, verificá la convención antes. El `GetVersion` de Go/Java (entradas
+  `changeId-version`) no emite `core_patch` y no está soportado.
+- **La API de control no tiene autenticación** (spec 16 lo deja fuera, hallazgo M-1 de la
+  auditoría). `POST /patches/.../override`, `/schedule/pause|unpause|trigger` y `/health/workflow`
+  están abiertos, el puerto `5100` se publica directo en el host (sin pasar por nginx) y Swagger
+  está siempre habilitado. `/health/workflow` tampoco tiene rate limit. Para exponer el monitor más
+  allá de una red de confianza, ponele un proxy con autenticación delante.
+- **Identidad de un patch y caracteres inusuales.** El `workflowId` del entity sale de
+  `Namespace`, `WorkflowType` y `patchId` saneados (todo lo que no sea `[A-Za-z0-9._-]` pasa a
+  `_`); si el saneado cambió algo, se agrega un hash de los valores crudos para que `a b` y `a_b`
+  no compartan estado. Las keys que solo usan `[A-Za-z0-9._-]` no cambian de id.
+- **Entities fantasma de versiones anteriores.** Antes del spec 16 el nivel 1 recortaba un sufijo
+  `-<dígitos>` del `patchId` (`rot-1` se descubría como `rot`) cuando no se leía la historia. Si
+  tenés patches así, puede quedar un `patch-state::...::rot` en el namespace `monitor`: dalo de baja
+  con el signal `Unregister` al workflow `patch-registry` y terminando ese entity.
+- **Los contenedores corren sin root.** Worker y API como el usuario `app` de la imagen de
+  ASP.NET; el dashboard con `nginx-unprivileged`, que escucha en `8080` dentro del contenedor
+  (el puerto del host sigue siendo `5101`). Si tenés un overlay propio que publique `5101:80`,
+  cambialo a `5101:8080`.
 - **Un patch cuyo `Workflow.Patched` vive en una rama de código que la ventana de discovery nunca
   ejerció no puede distinguirse de "el código se quitó".** Ninguna estrategia basada solo en Event
   History lo resuelve (spec 13, límite residual tras mitigar el falso Clean con

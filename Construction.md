@@ -182,7 +182,7 @@ Derivada de las 6 specs de `ReleaseOrderDemo`. Cada `/spec` que se cree debe res
 | 13 | `per-patch-absent-attribution` | Evaluar `Absent` (fase Clean) por `patchId` individual en vez de por bucket "floating" del workflow type entero, para soportar patches concurrentes, con mitigación de falso Clean — ver `docs/limitacion-clean-patches-concurrentes.md` | 03, 04 |
 | 14 | `audit-high-severity-fixes` | Corregir los hallazgos altos de la auditoría (`Audtioria_pathmonitor.md`): un fallo del notificador nunca cuenta como enviado, `ContinuedAsNew` no bloquea gates, los workflows no leen el entorno y la suite deja de ser intermitente | 02, 05, 06, 07 |
 | 15 | `audit-medium-severity-fixes` | Hallazgos medios de la auditoría (M-2 a M-9): conexiones y reconexión, actualización del Schedule, `restart` del worker, `Clean` que no retrocede sin evidencia nueva, topes de descubrimiento coherentes, `/runs` y rotación estable de patches | 14 |
-| 16 | `audit-low-severity-and-security` | Hallazgos bajos de la auditoría (B-1 a B-8) más seguridad **opcional** (token de la API, contenedores no-root) — **pendiente de `/spec`** | 14 |
+| 16 | `audit-low-severity-fixes` | Hallazgos bajos de la auditoría (B-1 a B-8) y el recorte de `patchId` en el Tier 1; contenedores no-root. El token de la API (M-1) quedó fuera y sin spec | 14, 15 |
 
 ### Por qué van en ese orden
 

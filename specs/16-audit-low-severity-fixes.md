@@ -1,6 +1,6 @@
 # 16 - Correcciones de severidad baja de la auditoría
 
-**Estado:** Aprobado
+**Estado:** Implementado
 **Depende de:** [02-patch-lifecycle-domain-model.md](02-patch-lifecycle-domain-model.md), [03-patch-discovery-two-tier.md](03-patch-discovery-two-tier.md), [04-current-phase-resolution.md](04-current-phase-resolution.md), [08-control-api.md](08-control-api.md), [11-monitor-web-mvp.md](11-monitor-web-mvp.md), [15-audit-medium-severity-fixes.md](15-audit-medium-severity-fixes.md)
 **Fecha:** 2026-10-02
 
@@ -78,6 +78,12 @@ historia no se lee y aparece un entity fantasma. Comparte zona con B-3.
   - Verificar que `cn("px-2", "px-4")` devuelve `"px-4"` (y un caso de colores en conflicto). Si
     resuelve: se conserva `cn` y se documenta en el spec. Si no: `web/src/lib/utils.ts` pasa a
     `twMerge(clsx(inputs))`, se agregan `clsx` y `tailwind-merge`, y se quita `cn`.
+  - **Resultado de la verificación (2026-10-02, paso 9):** `cn` 0.3.0 resuelve conflictos:
+    `cn("px-2","px-4")` → `"px-4"`, `cn("text-red-500","text-blue-500")` → `"text-blue-500"`,
+    `cn("p-2","px-4")` → `"p-2 px-4"` (igual que `tailwind-merge`). La segunda mitad de B-6 era un
+    falso positivo: **se conserva `cn`** y `utils.ts` no cambia. `shadcn` se mueve a
+    `devDependencies` (`src/index.css` importa `shadcn/tailwind.css`, que es de build: el
+    Dockerfile hace `npm ci` completo).
 
 - **B-7 — Contenedores no-root.**
   - `docker/Dockerfile.PatchMonitor` y `docker/Dockerfile.MonitorApi`: `USER $APP_UID` (usuario
@@ -180,24 +186,28 @@ que tocan `web/`).
 
 ## Criterios de aceptación
 
-- [ ] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
-- [ ] `dotnet test PatchMonitor.sln` pasa en verde sin Docker.
-- [ ] `npm run build` en `web/` pasa.
-- [ ] `PatchKey` con `"a b"` y `"a_b"` produce workflowIds distintos (test); una key con solo
+- [x] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
+- [x] `dotnet test PatchMonitor.sln` pasa en verde sin Docker.
+- [x] `npm run build` en `web/` pasa.
+- [x] `PatchKey` con `"a b"` y `"a_b"` produce workflowIds distintos (test); una key con solo
       `[A-Za-z0-9._-]` conserva su id anterior (tests de formato sin cambios).
-- [ ] Un patch `rot-1` descubierto solo por Tier 1 conserva el id `rot-1` (test).
-- [ ] Tier 1 con historia ilegible da `MarkerPresence.Unknown` y set truncado (test).
-- [ ] `PhaseEvaluator.Evaluate` con `Clean` o `Unknown` lanza `InvalidOperationException` (test).
-- [ ] `GET /patches` con una key ilegible devuelve su `error` con el motivo (test) y el dashboard
-      muestra el motivo en el badge "Ilegible" (verificación manual).
-- [ ] La concurrencia de lecturas de `GET /patches` no supera `API_LIST_PATCHES_CONCURRENCY` y el
+- [x] Un patch `rot-1` descubierto solo por Tier 1 conserva el id `rot-1` (test).
+- [x] Tier 1 con historia ilegible da `MarkerPresence.Unknown` y set truncado (test).
+- [x] `PhaseEvaluator.Evaluate` con `Clean` o `Unknown` lanza `InvalidOperationException` (test).
+- [x] `GET /patches` con una key ilegible devuelve su `error` con el motivo (test) y el dashboard
+      muestra el motivo en el badge "Ilegible" (verificación manual). *(Verificado: el test y
+      `GET /api/patches` por nginx devuelve `error: null` en patches sanos; el tooltip se verificó
+      solo por compilación de TypeScript, sin una key ilegible real en el navegador.)*
+- [x] La concurrencia de lecturas de `GET /patches` no supera `API_LIST_PATCHES_CONCURRENCY` y el
       orden se conserva (test).
-- [ ] `"no rows in result set"` no aparece en `src/` o aparece solo dentro de
+- [x] `"no rows in result set"` no aparece en `src/` o aparece solo dentro de
       `TemporalErrors.IsNotFound` (grep), y ningún caller compara contra `NotFoundError` (grep).
-- [ ] `shadcn` está en `devDependencies` de `web/package.json`.
-- [ ] Worker, API y dashboard corren con uid distinto de 0 y el dashboard responde en `:5101`
-      (verificación manual).
-- [ ] README documenta la falta de autenticación de la API como límite conocido.
+- [x] `shadcn` está en `devDependencies` de `web/package.json`.
+- [x] Worker, API y dashboard corren con uid distinto de 0 y el dashboard responde en `:5101`
+      (verificación manual). *(Verificado con un stack temporal en `:15100/:15101`: API uid 1654,
+      nginx uid 101, dashboard `200` y `/api/health` por nginx `ok`; el worker se comprobó solo
+      con `id -u` sobre su imagen, sin correrlo, para no competir con el worker real.)*
+- [x] README documenta la falta de autenticación de la API como límite conocido.
 
 ## Decisiones
 
