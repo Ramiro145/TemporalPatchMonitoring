@@ -180,6 +180,9 @@ Derivada de las 6 specs de `ReleaseOrderDemo`. Cada `/spec` que se cree debe res
 | 11 | `monitor-web-mvp` | Dashboard React que consume `MonitorApi` para observar patches y controlar el Schedule sin Swagger | 09 |
 | 12 | `single-cluster-namespace-isolation` | Apoyarse en un cluster de Temporal existente en vez de levantar el suyo propio, aislando el estado por namespace (`monitor` vs. `default`) | 09 |
 | 13 | `per-patch-absent-attribution` | Evaluar `Absent` (fase Clean) por `patchId` individual en vez de por bucket "floating" del workflow type entero, para soportar patches concurrentes, con mitigación de falso Clean — ver `docs/limitacion-clean-patches-concurrentes.md` | 03, 04 |
+| 14 | `audit-high-severity-fixes` | Corregir los hallazgos altos de la auditoría (`Audtioria_pathmonitor.md`): un fallo del notificador nunca cuenta como enviado, `ContinuedAsNew` no bloquea gates, los workflows no leen el entorno y la suite deja de ser intermitente | 02, 05, 06, 07 |
+| 15 | `audit-medium-severity-fixes` | Hallazgos medios de la auditoría (M-2 a M-9): conexiones y reconexión, actualización del Schedule, `restart` del worker, Clean que no regresa a `Unknown`, topes de descubrimiento coherentes, `/runs` y orden estable de patches — **pendiente de `/spec`** | 14 |
+| 16 | `audit-low-severity-and-security` | Hallazgos bajos de la auditoría (B-1 a B-8) más seguridad **opcional** (token de la API, contenedores no-root) — **pendiente de `/spec`** | 14 |
 
 ### Por qué van en ese orden
 

@@ -1,6 +1,6 @@
 # 14 - Correcciones de severidad alta de la auditoría
 
-**Estado:** Aprobado
+**Estado:** Implementado
 **Depende de:** [02-patch-lifecycle-domain-model.md](02-patch-lifecycle-domain-model.md), [05-durable-state-entity-workflows.md](05-durable-state-entity-workflows.md), [06-monitor-workflow-temporal-schedule.md](06-monitor-workflow-temporal-schedule.md), [07-pluggable-notifier.md](07-pluggable-notifier.md)
 **Fecha:** 2026-10-02
 
@@ -52,8 +52,8 @@ determinación de los propios workflows del monitor.
     `src/PatchMonitor/Infrastructure/ServiceCollectionExtensions.cs`; registrada en DI y en la lista
     de tipos de `WorkerHost`. `MonitorWorkflow.RunAsync` la ejecuta primero y deja de llamar a
     `*.FromEnvironment()`; el resultado queda grabado en la historia.
-  - `IPatchStateWorkflow.RunAsync(PatchKey key, PatchState? carryover, StateOptions? options = null)`
-    e `IPatchRegistryWorkflow.RunAsync(PatchRegistryState? carryover, StateOptions? options = null)`
+  - `IPatchStateWorkflow.RunAsync(PatchKey key, PatchState? carryover, StateOptions? options)`
+    e `IPatchRegistryWorkflow.RunAsync(PatchRegistryState? carryover, StateOptions? options)`
     (`src/Contracts/Workflows/`). En `PatchStateWorkflow` (`[WorkflowInit]`) y en
     `PatchRegistryWorkflow`: `_options = options ?? StateOptions.FromEnvironment()`. El fallback al
     entorno es **solo el camino legado** de ejecuciones vivas arrancadas sin el argumento, para que
@@ -98,7 +98,7 @@ public sealed record MonitorRunConfig(
 ```
 
 Cambios de firma, sin records nuevos: `IPatchStateWorkflow.RunAsync` y `IPatchRegistryWorkflow.RunAsync`
-ganan un `StateOptions? options = null` final. `PatchState` no cambia (ya tiene `NotifiedRevision`).
+ganan un `StateOptions? options` final (obligatorio en la interfaz: C# no admite argumentos opcionales omitidos en expression trees; el `= null` vive solo en las clases de workflow, para historias viejas con menos argumentos). `PatchState` no cambia (ya tiene `NotifiedRevision`).
 
 ## Plan de implementación
 
@@ -125,17 +125,17 @@ Cada paso deja el sistema compilando y con `dotnet test` en verde.
 
 ## Criterios de aceptación
 
-- [ ] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
-- [ ] `dotnet test PatchMonitor.sln` pasa en verde tres corridas completas seguidas, sin Docker.
-- [ ] `FromEnvironment()` en `src/PatchMonitor/Workflows/` aparece solo en el fallback legado
+- [x] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
+- [x] `dotnet test PatchMonitor.sln` pasa en verde tres corridas completas seguidas, sin Docker.
+- [x] `FromEnvironment()` en `src/PatchMonitor/Workflows/` aparece solo en el fallback legado
       `options ?? StateOptions.FromEnvironment()`.
-- [ ] Un notificador que falla deja `NotifiedRevision` sin avanzar y el run siguiente reintenta el
+- [x] Un notificador que falla deja `NotifiedRevision` sin avanzar y el run siguiente reintenta el
       envío (test).
-- [ ] Un patch ya notificado no se vuelve a enviar (test).
-- [ ] Un test de gate con una run `ContinuedAsNew` sin marker más su sucesora `Running` con marker
+- [x] Un patch ya notificado no se vuelve a enviar (test).
+- [x] Un test de gate con una run `ContinuedAsNew` sin marker más su sucesora `Running` con marker
       da `Ready`.
-- [ ] `CompositeNotifier` lanza cuando falla un solo notificador (test).
-- [ ] `specs/02-...`, `README.md` y `Construction.md` reflejan los cambios.
+- [x] `CompositeNotifier` lanza cuando falla un solo notificador (test).
+- [x] `specs/02-...`, `README.md` y `Construction.md` reflejan los cambios.
 
 ## Decisiones
 

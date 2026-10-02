@@ -154,7 +154,7 @@ tienen patches (ver [Límites conocidos](#límites-conocidos)).
      2. Resolver    → decide la fase actual de cada patch
      3. Evaluar     → aplica el gate de salto de esa fase
      4. Persistir   → manda el assessment al entity workflow del patch
-     5. Notificar   → solo si la revisión del estado avanzó
+     5. Notificar   → solo si hay una revisión del estado sin avisar todavía
             │
             ▼
  PatchStateWorkflow (uno por patch, nunca cierra)  +  PatchRegistryWorkflow (índice)
@@ -200,10 +200,27 @@ falso. Las ejecuciones cerradas nunca bloquean.
 (`PatchStateWorkflow`) que acumula los assessments, guarda el último veredicto y un historial de
 cambios, y hace `Continue-As-New` al superar `PATCH_STATE_CAN_THRESHOLD`. Un índice singleton
 (`PatchRegistryWorkflow`) permite listar todos los patches sin depender de Visibility.
+Los entity workflows no leen el entorno mientras corren: reciben `PATCH_STATE_*` al arrancar y
+las arrastran en cada `Continue-As-New`, así que **un cambio en `PATCH_STATE_*` aplica a cada
+entity recién tras su próximo `Continue-As-New`** (o si se reinicia el entity), no al instante.
 
 **5. Notificación.** Solo cuando el estado del patch cambió (fase, resultado del gate o fase
 siguiente). Una corrida sin cambios no avisa. Siempre se escribe una línea JSON en el log del
 worker; si `NOTIFIER_WEBHOOK_URL` está definida, además se hace `POST` del mismo JSON.
+
+- **Un fallo nunca cuenta como enviado.** Se envía primero y se marca la revisión como avisada
+  después, solo si el envío salió bien. Si falla cualquier destino (por ejemplo el webhook), la
+  revisión queda pendiente y se reintenta: dentro de la pasada hasta `NOTIFIER_MAX_ATTEMPTS`, y en
+  cada tick siguiente mientras siga pendiente. El fallo aparece en `errors` y `notificationsFailed`
+  de la corrida (`GET /runs`).
+- **Se avisa el estado vigente, no cada revisión intermedia.** Si un patch cambió varias veces
+  mientras el webhook estaba caído, al recuperarse llega un solo aviso con el estado actual.
+- **Ráfaga única al habilitar.** Si las notificaciones estaban deshabilitadas
+  (`NOTIFIER_ENABLED=false`) o el webhook nunca se había configurado y se habilitan, cada patch con
+  revisiones sin avisar manda un aviso con su estado vigente en la pasada siguiente.
+- **Entrega at-least-once.** Si el envío sale bien pero el marcado falla, el reintento reenvía:
+  un aviso puede llegar duplicado. Con log y webhook configurados, un reintento por webhook caído
+  repite también la línea del log.
 
 ---
 
@@ -313,13 +330,13 @@ Todas las variables son opcionales; un valor ausente, no numérico o no positivo
 | `MONITOR_INTERVAL_MINUTES` | `5` | Cadencia del Schedule |
 | `MONITOR_CATCHUP_WINDOW_MINUTES` | `10` | Ventana para recuperar ticks perdidos |
 | `MONITOR_MAX_PATCHES_PER_RUN` | `50` | Patches evaluados por pasada |
-| `PATCH_STATE_CAN_THRESHOLD` | `500` | Assessments antes del `Continue-As-New` de un entity |
-| `PATCH_STATE_HISTORY_LIMIT` | `20` | Cambios que se conservan en el historial de un patch |
+| `PATCH_STATE_CAN_THRESHOLD` | `500` | Assessments antes del `Continue-As-New` de un entity; un cambio aplica a cada entity tras su próximo `Continue-As-New` |
+| `PATCH_STATE_HISTORY_LIMIT` | `20` | Cambios que se conservan en el historial de un patch; mismo criterio de aplicación |
 | `NOTIFIER_ENABLED` | `true` | Apaga todas las notificaciones |
 | `NOTIFIER_WEBHOOK_URL` | — | Si está, se hace `POST` a esa URL en cada cambio |
 | `NOTIFIER_WEBHOOK_AUTH_HEADER` | — | Cabecera de auth, formato `Nombre: valor` |
 | `NOTIFIER_WEBHOOK_TIMEOUT_SECONDS` | `10` | Timeout del webhook |
-| `NOTIFIER_MAX_ATTEMPTS` | `3` | Reintentos de la notificación |
+| `NOTIFIER_MAX_ATTEMPTS` | `3` | Intentos de la notificación dentro de una pasada; si se agotan, se reintenta en el tick siguiente |
 | `API_MAX_LIST_PATCHES` | `100` | Tope de `GET /patches` |
 | `API_OVERRIDE_DEFAULT_TTL_HOURS` | `24` | Vencimiento por defecto de un override |
 | `API_MAX_LIST_RUNS` | `20` | Tope de `GET /runs` |
@@ -348,7 +365,7 @@ Construction.md  Hoja de ruta, decisiones cerradas y criterio de "listo".
 
 ```powershell
 dotnet build PatchMonitor.sln
-dotnet test  PatchMonitor.sln     # 292 tests, sin Docker
+dotnet test  PatchMonitor.sln     # 306 tests, sin Docker
 ```
 
 La primera corrida de tests descarga el test-server de Temporal (una vez; queda cacheado).

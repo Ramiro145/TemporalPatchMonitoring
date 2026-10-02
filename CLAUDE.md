@@ -38,6 +38,11 @@ cambios de arquitectura.
   varios patches activos en el mismo workflow type (atribución de `Absent` por patch, con mitigación
   del "falso Clean" vía `PHASE_CLEAN_CONFIDENCE`); validado en vivo contra `ssy-yardflow`, ver
   `specs/13-per-patch-absent-attribution.md`.
+- **Spec 14** (correcciones de severidad alta de la auditoría `Audtioria_pathmonitor.md`):
+  notificar es consultar → enviar → reclamar (un fallo nunca cuenta como enviado y se reintenta en el
+  tick siguiente), `ContinuedAsNew` es una run cerrada (`IsOpen()` solo `Running`) y los workflows
+  no leen el entorno. Los medios (M-2 a M-9) y bajos (B-1 a B-8) más la seguridad opcional quedan
+  para los specs 15 y 16 (`Construction.md` §7, pendientes de `/spec`).
 - **Spec 10 (auto-versionado del `MonitorWorkflow`) diferido**, no descartado: la prioridad es
   probar el monitor contra un segundo proyecto real. Ver `Construction.md` §7 ítem 10 y §8.
 - Límites conocidos para reusarlo en otros proyectos: `specs/09-multi-target-e2e-validation.md`,
@@ -86,6 +91,13 @@ excepción) de que el monitor se va a observar a sí mismo.
   los argumentos de arranque lo inicializa en un constructor `[WorkflowInit]`: un
   signal-with-start puede entregar el signal antes de que corra `[WorkflowRun]` (bug real
   encontrado en el spec 09).
+- El código de workflow no lee el entorno (no es determinístico): `MonitorWorkflow` recibe su
+  configuración por la activity `ConfigActivities.GetMonitorRunConfig`, y `PatchStateWorkflow` /
+  `PatchRegistryWorkflow` reciben `StateOptions` como argumento de arranque y lo arrastran en el
+  `Continue-As-New`. El único `FromEnvironment()` que queda es el fallback de ejecuciones vivas
+  arrancadas sin ese argumento (spec 14).
+- La notificación reclama la revisión **después** de un envío exitoso, nunca antes; el notificador
+  compuesto falla si falla cualquier destino.
 - Cualquier cambio al código de `PatchStateWorkflow` o `PatchRegistryWorkflow` con ejecuciones
   vivas exige `Workflow.Patched` (nunca cierran). Es la razón de ser del spec 10.
 
@@ -93,7 +105,7 @@ excepción) de que el monitor se va a observar a sí mismo.
 
 ```powershell
 dotnet build PatchMonitor.sln
-dotnet test  PatchMonitor.sln        # 292 tests, sin Docker
+dotnet test  PatchMonitor.sln        # 306 tests, sin Docker
 
 # stack del monitor, desde docker/
 docker compose build
