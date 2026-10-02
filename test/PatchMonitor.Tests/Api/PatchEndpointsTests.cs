@@ -20,7 +20,8 @@ public class PatchEndpointsTests
     private static readonly PatchKey KeyC = new("default", "BillingWorkflow", "bill-v1");
     private static readonly DateTimeOffset T0 = new(2026, 9, 10, 12, 0, 0, TimeSpan.Zero);
 
-    private static ApiOptions Options(int maxList = 100) => new(maxList, TimeSpan.FromHours(24), 20);
+    private static ApiOptions Options(int maxList = 100, int concurrency = 8) =>
+        new(maxList, TimeSpan.FromHours(24), 20, concurrency);
 
     private static PatchState Assessed(PatchKey key) =>
         PatchState.Initial(key) with

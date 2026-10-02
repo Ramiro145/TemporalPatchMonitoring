@@ -9,8 +9,15 @@ namespace Contracts.Api;
 /// <see cref="Monitor.MonitorOptions"/>, <see cref="State.StateOptions"/> y
 /// <see cref="Notification.NotificationOptions"/>.
 /// </summary>
-public sealed record ApiOptions(int MaxListPatches, TimeSpan OverrideDefaultTtl, int MaxListRuns)
+public sealed record ApiOptions(
+    int MaxListPatches, TimeSpan OverrideDefaultTtl, int MaxListRuns, int ListPatchesConcurrency)
 {
+    /// <summary>
+    /// Lecturas de estado simultáneas de <c>GET /patches</c> cuando
+    /// <c>API_LIST_PATCHES_CONCURRENCY</c> no está (spec 16, B-5).
+    /// </summary>
+    public const int DefaultListPatchesConcurrency = 8;
+
     /// <summary>Tope por defecto de patches enriquecidos cuando <c>API_MAX_LIST_PATCHES</c> no está.</summary>
     public const int DefaultMaxListPatches = 100;
 
@@ -21,8 +28,8 @@ public sealed record ApiOptions(int MaxListPatches, TimeSpan OverrideDefaultTtl,
     public const int DefaultMaxListRuns = 20;
 
     /// <summary>
-    /// Lee <c>API_MAX_LIST_PATCHES</c>, <c>API_OVERRIDE_DEFAULT_TTL_HOURS</c> y
-    /// <c>API_MAX_LIST_RUNS</c>. Cualquiera que falte, no parsee como entero o no sea positiva
+    /// Lee <c>API_MAX_LIST_PATCHES</c>, <c>API_OVERRIDE_DEFAULT_TTL_HOURS</c>,
+    /// <c>API_MAX_LIST_RUNS</c> y <c>API_LIST_PATCHES_CONCURRENCY</c>. Cualquiera que falte, no parsee como entero o no sea positiva
     /// usa su default. Nunca lanza.
     /// </summary>
     public static ApiOptions FromEnvironment()
@@ -30,7 +37,8 @@ public sealed record ApiOptions(int MaxListPatches, TimeSpan OverrideDefaultTtl,
         return new ApiOptions(
             PositiveIntOrDefault("API_MAX_LIST_PATCHES", DefaultMaxListPatches),
             TimeSpan.FromHours(PositiveIntOrDefault("API_OVERRIDE_DEFAULT_TTL_HOURS", DefaultOverrideTtlHours)),
-            PositiveIntOrDefault("API_MAX_LIST_RUNS", DefaultMaxListRuns));
+            PositiveIntOrDefault("API_MAX_LIST_RUNS", DefaultMaxListRuns),
+            PositiveIntOrDefault("API_LIST_PATCHES_CONCURRENCY", DefaultListPatchesConcurrency));
     }
 
     private static int PositiveIntOrDefault(string variable, int fallback)

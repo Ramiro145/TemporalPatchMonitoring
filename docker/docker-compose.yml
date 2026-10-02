@@ -136,8 +136,10 @@ services:
       # patch-monitor-worker (spec 06).
       - MONITOR_SCHEDULE_ID=patch-monitor-schedule
       # API de control (spec 08): tope de patches enriquecidos por GET /patches y vencimiento
-      # por defecto de un override sin ExpiresAt explícito.
+      # por defecto de un override sin ExpiresAt explícito. API_LIST_PATCHES_CONCURRENCY acota
+      # las lecturas de estado simultáneas de GET /patches (spec 16).
       - API_MAX_LIST_PATCHES=100
+      - API_LIST_PATCHES_CONCURRENCY=8
       - API_OVERRIDE_DEFAULT_TTL_HOURS=24
     extra_hosts:
       - "host.docker.internal:host-gateway"

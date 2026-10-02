@@ -1,6 +1,7 @@
 using Common.Temporal;
 using System.Linq.Expressions;
 using Common;
+using Contracts.Api;
 using Contracts.Domain;
 using Contracts.Phase;
 using Contracts.State;
@@ -118,20 +119,20 @@ public sealed class TemporalPatchStateStore : IPatchStateStore
     {
         var keys = await ListAsync(ct).ConfigureAwait(false);
         var now = DateTimeOffset.UtcNow;
-        var active = new List<PhaseOverride>();
 
-        foreach (var key in keys)
-        {
-            ct.ThrowIfCancellationRequested();
+        // Lecturas en paralelo acotado (spec 16, B-5). El worker no ve ApiOptions, así que usa
+        // el tope por defecto (no configurable por variable de entorno).
+        var states = await BoundedParallel.SelectAsync(
+            keys,
+            ApiOptions.DefaultListPatchesConcurrency,
+            (key, token) => GetStateAsync(key, token),
+            ct).ConfigureAwait(false);
 
-            var state = await GetStateAsync(key, ct).ConfigureAwait(false);
-            if (state?.Override is { } ov && ov.IsActiveAt(now))
-            {
-                active.Add(ov);
-            }
-        }
-
-        return active;
+        return states
+            .Select(state => state?.Override)
+            .Where(ov => ov is not null && ov.IsActiveAt(now))
+            .Select(ov => ov!)
+            .ToList();
     }
 
     public async Task<PatchState> SetOverrideAsync(PhaseOverride ov, CancellationToken ct = default)

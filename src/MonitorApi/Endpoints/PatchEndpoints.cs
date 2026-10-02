@@ -19,27 +19,28 @@ public static class PatchEndpoints
         var limited = keys.Take(options.MaxListPatches).ToArray();
         var truncated = keys.Count > options.MaxListPatches;
 
-        var summaries = new List<PatchSummaryResponse>(limited.Length);
-        foreach (var key in limited)
-        {
-            PatchSummaryResponse summary;
-            try
+        // Lecturas en paralelo acotado (spec 16, B-5): el orden de salida es el del registry.
+        var summaries = await BoundedParallel.SelectAsync(
+            limited,
+            options.ListPatchesConcurrency,
+            async (key, token) =>
             {
-                var state = await store.GetStateAsync(key, ct).ConfigureAwait(false);
-                summary = state is null
-                    ? PatchSummaryResponse.Unreadable(key, "El entity no existe todavía.")
-                    : PatchSummaryResponse.FromState(state);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                // Una key ilegible no puede tirar abajo el listado entero.
-                summary = PatchSummaryResponse.Unreadable(key, ex.Message);
-            }
+                try
+                {
+                    var state = await store.GetStateAsync(key, token).ConfigureAwait(false);
+                    return state is null
+                        ? PatchSummaryResponse.Unreadable(key, "El entity no existe todavía.")
+                        : PatchSummaryResponse.FromState(state);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // Una key ilegible no puede tirar abajo el listado entero.
+                    return PatchSummaryResponse.Unreadable(key, ex.Message);
+                }
+            },
+            ct).ConfigureAwait(false);
 
-            summaries.Add(summary);
-        }
-
-        return TypedResults.Ok(new PatchListResponse(summaries.Count, truncated, summaries));
+        return TypedResults.Ok(new PatchListResponse(summaries.Length, truncated, summaries));
     }
 
     public static async Task<Results<Ok<PatchDetailResponse>, NotFound>> GetAsync(
