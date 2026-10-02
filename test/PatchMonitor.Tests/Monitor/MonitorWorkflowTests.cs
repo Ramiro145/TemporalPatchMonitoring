@@ -222,6 +222,52 @@ public class MonitorWorkflowTests
     }
 
     [Fact]
+    public async Task Un_aviso_fallido_se_reintenta_en_la_pasada_siguiente_aunque_el_veredicto_no_cambie()
+    {
+        var key = new Contracts.Domain.PatchKey("default", "OrderWorkflow", "core-patch");
+        var source = new FakeExecutionSource().Seed(
+            HistoryFixtures.OpenWithAttribute("core-patch", "OrderWorkflow"));
+        var store = new FakePatchStateStore();
+        var notifier = new FakeNotifier("webhook", fails: true);
+
+        var first = await RunAsync(source, store, new INotifier[] { notifier });
+
+        Assert.True(first.VerdictsChanged > 0);
+        Assert.Equal(0, first.NotificationsSent);
+        Assert.True(first.NotificationsFailed > 0);
+        var afterFirst = (await store.GetStateAsync(key))!;
+        Assert.Equal(0, afterFirst.NotifiedRevision);
+
+        notifier.Fails = false;
+        var second = await RunAsync(source, store, new INotifier[] { notifier });
+
+        Assert.Equal(0, second.VerdictsChanged);
+        Assert.Equal(1, second.NotificationsSent);
+        Assert.Equal(0, second.NotificationsFailed);
+        var afterSecond = (await store.GetStateAsync(key))!;
+        Assert.Equal(afterSecond.Revision, afterSecond.NotifiedRevision);
+    }
+
+    [Fact]
+    public async Task Una_revision_ya_notificada_no_se_reenvia_en_la_pasada_siguiente()
+    {
+        var source = new FakeExecutionSource().Seed(
+            HistoryFixtures.OpenWithAttribute("core-patch", "OrderWorkflow"));
+        var store = new FakePatchStateStore();
+        var notifier = new FakeNotifier("log");
+
+        await RunAsync(source, store, new INotifier[] { notifier });
+        var callsAfterFirst = notifier.Calls.Count;
+
+        var second = await RunAsync(source, store, new INotifier[] { notifier });
+
+        Assert.Equal(1, callsAfterFirst);
+        Assert.Equal(callsAfterFirst, notifier.Calls.Count);
+        Assert.Equal(0, second.NotificationsSent);
+        Assert.Equal(0, second.NotificationsFailed);
+    }
+
+    [Fact]
     public async Task Fallo_de_descubrimiento_entero_hace_fallar_la_corrida()
     {
         var ex = await Assert.ThrowsAsync<WorkflowFailedException>(

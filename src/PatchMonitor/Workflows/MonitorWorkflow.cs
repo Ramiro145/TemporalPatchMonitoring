@@ -75,48 +75,43 @@ public class MonitorWorkflow : IMonitorWorkflow
                 if (state.Revision > revisionBefore)
                 {
                     verdictsChanged++;
+                }
 
-                    if (config.NotificationsEnabled)
+                // Se notifica por "pendiente" y no solo cuando la Revision acaba de avanzar: la
+                // Activity reclama la revisión recién después de un envío exitoso, así que un
+                // fallo deja NotifiedRevision atrás y el tick siguiente lo reintenta (spec 14).
+                // Se avisa solo el estado vigente, no cada revisión intermedia.
+                if (config.NotificationsEnabled && state.NotifiedRevision < state.Revision)
+                {
+                    try
                     {
-                        try
+                        var notification = VerdictChangeNotification.FromState(state);
+                        var notifyOptions = new ActivityOptions
                         {
-                            var notification = VerdictChangeNotification.FromState(state);
-                            var notifyOptions = new ActivityOptions
-                            {
-                                StartToCloseTimeout = TimeSpan.FromMinutes(2),
-                                RetryPolicy = new RetryPolicy { MaximumAttempts = config.NotifierMaxAttempts },
-                            };
+                            StartToCloseTimeout = TimeSpan.FromMinutes(2),
+                            RetryPolicy = new RetryPolicy { MaximumAttempts = config.NotifierMaxAttempts },
+                        };
 
-                            var sent = await Workflow
-                                .ExecuteActivityAsync(
-                                    (NotificationActivities a) => a.NotifyVerdictChangeAsync(notification),
-                                    notifyOptions)
-                                .ConfigureAwait(true);
+                        var sent = await Workflow
+                            .ExecuteActivityAsync(
+                                (NotificationActivities a) => a.NotifyVerdictChangeAsync(notification),
+                                notifyOptions)
+                            .ConfigureAwait(true);
 
-                            if (sent)
-                            {
-                                notificationsSent++;
-                            }
-                            else
-                            {
-                                // Esta rama solo se toca cuando el Revision recién avanzó, así
-                                // que un "false" acá solo puede significar que un reintento de
-                                // la propia RetryPolicy ya reclamó la notificación en un intento
-                                // anterior que después falló al invocar el INotifier: la
-                                // Activity ya no reintenta el envío (el claim quedó tomado), pero
-                                // el resultado sigue siendo "no se avisó".
-                                notificationsFailed++;
-                                errors.Add($"{patch.Key} (notificación): un intento anterior reclamó la notificación pero no pudo enviarla.");
-                            }
-                        }
-                        catch (ActivityFailureException ex)
+                        // "false" significa que esa revisión ya estaba notificada (otra corrida
+                        // se adelantó): no es un fallo ni un envío nuevo, no se cuenta.
+                        if (sent)
                         {
-                            // Un fallo de notificación no rompe el resto del procesamiento de
-                            // este patch: el assessment y la persistencia ya ocurrieron y
-                            // cuentan igual, así que no cae en el catch que aborta el patch.
-                            notificationsFailed++;
-                            errors.Add($"{patch.Key} (notificación): {ex.InnerException?.Message ?? ex.Message}");
+                            notificationsSent++;
                         }
+                    }
+                    catch (ActivityFailureException ex)
+                    {
+                        // Un fallo de notificación no rompe el resto del procesamiento de
+                        // este patch: el assessment y la persistencia ya ocurrieron y
+                        // cuentan igual, así que no cae en el catch que aborta el patch.
+                        notificationsFailed++;
+                        errors.Add($"{patch.Key} (notificación): {ex.InnerException?.Message ?? ex.Message}");
                     }
                 }
             }
