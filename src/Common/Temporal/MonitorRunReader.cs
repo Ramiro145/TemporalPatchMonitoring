@@ -18,16 +18,16 @@ namespace Common.Temporal
         // que DiscoveryOptions.MaxExecutions (tope defensivo, nunca ilimitado).
         private const int MaxScanned = 500;
 
-        private readonly Lazy<Task<ITemporalClient>> _client;
+        private readonly ResettableAsyncLazy<ITemporalClient> _client;
 
-        public TemporalMonitorRunReader(Lazy<Task<ITemporalClient>> client)
+        public TemporalMonitorRunReader(ResettableAsyncLazy<ITemporalClient> client)
         {
             _client = client;
         }
 
         public async Task<IReadOnlyList<MonitorRunView>> ListRecentAsync(int limit, CancellationToken ct = default)
         {
-            var client = await _client.Value.ConfigureAwait(false);
+            var client = await _client.GetValueAsync().ConfigureAwait(false);
             var scanned = new List<WorkflowExecution>(Math.Min(limit, MaxScanned));
 
             await foreach (var execution in client

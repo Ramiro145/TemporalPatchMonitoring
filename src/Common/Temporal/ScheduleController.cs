@@ -14,10 +14,10 @@ namespace Common.Temporal
     /// </summary>
     public sealed class TemporalScheduleController : IScheduleController
     {
-        private readonly Lazy<Task<ITemporalClient>> _client;
+        private readonly ResettableAsyncLazy<ITemporalClient> _client;
         private readonly MonitorOptions _options;
 
-        public TemporalScheduleController(Lazy<Task<ITemporalClient>> client, MonitorOptions options)
+        public TemporalScheduleController(ResettableAsyncLazy<ITemporalClient> client, MonitorOptions options)
         {
             _client = client;
             _options = options;
@@ -25,7 +25,7 @@ namespace Common.Temporal
 
         public async Task<ScheduleStatus?> DescribeAsync(CancellationToken ct = default)
         {
-            var client = await _client.Value.ConfigureAwait(false);
+            var client = await _client.GetValueAsync().ConfigureAwait(false);
             var handle = client.GetScheduleHandle(_options.ScheduleId);
 
             try
@@ -41,7 +41,7 @@ namespace Common.Temporal
 
         public async Task<bool> PauseAsync(string? note, CancellationToken ct = default)
         {
-            var client = await _client.Value.ConfigureAwait(false);
+            var client = await _client.GetValueAsync().ConfigureAwait(false);
             var handle = client.GetScheduleHandle(_options.ScheduleId);
 
             try
@@ -57,7 +57,7 @@ namespace Common.Temporal
 
         public async Task<bool> UnpauseAsync(string? note, CancellationToken ct = default)
         {
-            var client = await _client.Value.ConfigureAwait(false);
+            var client = await _client.GetValueAsync().ConfigureAwait(false);
             var handle = client.GetScheduleHandle(_options.ScheduleId);
 
             try
@@ -73,7 +73,7 @@ namespace Common.Temporal
 
         public async Task<bool> TriggerAsync(CancellationToken ct = default)
         {
-            var client = await _client.Value.ConfigureAwait(false);
+            var client = await _client.GetValueAsync().ConfigureAwait(false);
             var handle = client.GetScheduleHandle(_options.ScheduleId);
 
             try

@@ -72,10 +72,12 @@ app.MapGet("/health", async (TemporalClient client) =>
     });
 });
 
-// Arranca HealthWorkflow y devuelve el workflowId generado por WorkflowStarter.
-app.MapPost("/health/workflow", async () =>
+// Arranca HealthWorkflow y devuelve el workflowId generado por WorkflowStarter, reusando el
+// TemporalClient singleton (spec 15, M-2).
+app.MapPost("/health/workflow", async (TemporalClient client) =>
 {
     var workflowId = await WorkflowStarter.StartAsync<IHealthWorkflow, string>(
+        client,
         taskQueue,
         wf => wf.RunAsync(),
         "health-workflow");

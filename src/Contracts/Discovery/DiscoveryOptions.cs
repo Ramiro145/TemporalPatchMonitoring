@@ -25,8 +25,12 @@ public sealed record DiscoveryOptions(
     /// <summary>Tope por defecto de ejecuciones listadas por corrida.</summary>
     public const int DefaultMaxExecutions = 500;
 
-    /// <summary>Tope por defecto de historias leídas en tier 2 por corrida.</summary>
-    public const int DefaultMaxHistories = 200;
+    /// <summary>
+    /// Tope por defecto de historias leídas en tier 2 por corrida. Igual a
+    /// <see cref="DefaultMaxExecutions"/> a propósito (spec 15, M-7): con un tope menor, toda
+    /// ejecución listada más allá de él queda <c>Unknown</c> y los patches salen <c>Inconclusive</c>.
+    /// </summary>
+    public const int DefaultMaxHistories = DefaultMaxExecutions;
 
     /// <summary>
     /// Lee <c>TARGET_TEMPORAL_NAMESPACE</c>, <c>TARGET_TEMPORAL_HOST</c>,

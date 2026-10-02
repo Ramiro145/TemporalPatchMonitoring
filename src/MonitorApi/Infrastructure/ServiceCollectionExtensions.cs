@@ -24,7 +24,7 @@ public static class ServiceCollectionExtensions
 
         // Envuelve el TemporalClient singleton que la API ya conecta de forma ansiosa
         // (Program.cs): ningún segundo ConnectAsync, misma conexión que sirve /health.
-        services.AddSingleton(sp => new Lazy<Task<ITemporalClient>>(
+        services.AddSingleton(sp => new ResettableAsyncLazy<ITemporalClient>(
             () => Task.FromResult<ITemporalClient>(sp.GetRequiredService<TemporalClient>())));
 
         services.AddSingleton<IPatchStateStore, TemporalPatchStateStore>();

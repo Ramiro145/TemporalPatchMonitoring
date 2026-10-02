@@ -3,6 +3,7 @@ using Contracts.Domain;
 using Contracts.Domain.Gates;
 using Contracts.Monitor;
 using Contracts.Phase;
+using Contracts.State;
 using Temporalio.Activities;
 using Temporalio.Exceptions;
 
@@ -34,17 +35,18 @@ public class PhaseActivities
     }
 
     [Activity]
-    public PhaseResolution ResolvePhase(PatchDiscoveryResult result) => _resolver.Resolve(result);
+    public PhaseResolution ResolvePhase(PatchDiscoveryResult result) => _resolver.Resolve(result, null);
 
     /// <summary>
     /// Resuelve la fase de <paramref name="result"/> y, solo si es <see cref="PatchPhase.Coexistence"/>
     /// o <see cref="PatchPhase.Deprecated"/>, evalúa el gate de salto. Para <see cref="PatchPhase.Clean"/>
     /// y <see cref="PatchPhase.Unknown"/> devuelve <c>Verdict = null</c>: no hay gate que aplique.
+    /// <paramref name="previous"/> es el estado durable de la pasada anterior (spec 15, M-6).
     /// </summary>
     [Activity]
-    public PatchAssessment AssessPatch(PatchDiscoveryResult result)
+    public PatchAssessment AssessPatch(PatchDiscoveryResult result, PatchState? previous = null)
     {
-        var resolution = _resolver.Resolve(result);
+        var resolution = _resolver.Resolve(result, previous);
 
         PhaseVerdict? verdict = resolution.Phase is PatchPhase.Coexistence or PatchPhase.Deprecated
             ? _evaluator.Evaluate(result.Key, resolution.Phase, result.Executions)

@@ -112,6 +112,12 @@ vive en los entity workflows del spec 05.
     `client.CreateScheduleAsync(options.ScheduleId, new Schedule { Action = ..., Spec = ..., Policy = ... })`
     dentro de un `try/catch (ScheduleAlreadyRunningException)`. Devuelve `true` si lo creó, `false` si
     ya existía. Cualquier otra excepción propaga.
+    > **Corrección (spec 15, M-3):** `EnsureScheduleAsync` ya no es create-if-absent. Devuelve
+    > `ScheduleEnsureResult { Created, Updated, Unchanged }`: si el Schedule existe y difiere de
+    > `MonitorOptions` (`ScheduleBootstrapper.Differs`), lo actualiza con `UpdateAsync` conservando
+    > pausa y nota. Cambiar `MONITOR_INTERVAL_MINUTES` o `MONITOR_CATCHUP_WINDOW_MINUTES` aplica al
+    > reiniciar el worker, sin `docker compose down -v`. Ver
+    > [15-audit-medium-severity-fixes.md](15-audit-medium-severity-fixes.md).
 
 - **`src/PatchMonitor/Workflows/MonitorWorkflow.cs`** — la pasada. En pseudocódigo:
 

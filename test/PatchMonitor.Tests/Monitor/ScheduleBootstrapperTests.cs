@@ -1,6 +1,7 @@
 using Common;
 using Contracts.Monitor;
 using Temporalio.Api.Enums.V1;
+using Temporalio.Client.Schedules;
 using Xunit;
 
 namespace PatchMonitor.Tests.Monitor;
@@ -55,5 +56,68 @@ public class ScheduleBootstrapperTests
 
         Assert.Equal("patch-monitor-task-queue", action.Options.TaskQueue);
         Assert.Equal(ScheduleBootstrapper.RunWorkflowIdPrefix, action.Options.Id);
+    }
+
+    // Schedule tal como lo dejaría EnsureScheduleAsync al crearlo con `options` (spec 15, M-3).
+    private static Schedule ScheduleFor(MonitorOptions options) =>
+        new(ScheduleBootstrapper.BuildAction(options), ScheduleBootstrapper.BuildSpec(options))
+        {
+            Policy = ScheduleBootstrapper.BuildPolicy(options),
+        };
+
+    [Fact]
+    public void Differs_es_false_cuando_el_schedule_coincide_con_la_configuracion()
+    {
+        Assert.False(ScheduleBootstrapper.Differs(ScheduleFor(DefaultOptions), DefaultOptions));
+    }
+
+    [Fact]
+    public void Differs_es_true_si_cambia_el_intervalo()
+    {
+        var current = ScheduleFor(DefaultOptions);
+        var desired = DefaultOptions with { Interval = TimeSpan.FromMinutes(15) };
+
+        Assert.True(ScheduleBootstrapper.Differs(current, desired));
+    }
+
+    [Fact]
+    public void Differs_es_true_si_cambia_el_catchup_window()
+    {
+        var current = ScheduleFor(DefaultOptions);
+        var desired = DefaultOptions with { CatchupWindow = TimeSpan.FromMinutes(30) };
+
+        Assert.True(ScheduleBootstrapper.Differs(current, desired));
+    }
+
+    [Fact]
+    public void Differs_es_true_si_cambia_la_task_queue()
+    {
+        var current = ScheduleFor(DefaultOptions);
+        var desired = DefaultOptions with { TaskQueue = "otra-task-queue" };
+
+        Assert.True(ScheduleBootstrapper.Differs(current, desired));
+    }
+
+    [Fact]
+    public void Differs_es_true_si_la_politica_de_overlap_no_es_Skip()
+    {
+        var baseline = ScheduleFor(DefaultOptions);
+        var current = baseline with
+        {
+            Policy = baseline.Policy with { Overlap = ScheduleOverlapPolicy.AllowAll },
+        };
+
+        Assert.True(ScheduleBootstrapper.Differs(current, DefaultOptions));
+    }
+
+    [Fact]
+    public void Differs_ignora_el_estado_pausado_y_la_nota()
+    {
+        var current = ScheduleFor(DefaultOptions) with
+        {
+            State = new ScheduleState { Paused = true, Note = "pausado por el operador" },
+        };
+
+        Assert.False(ScheduleBootstrapper.Differs(current, DefaultOptions));
     }
 }

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using Contracts.Monitor;
 using Contracts.Workflows;
@@ -38,27 +39,80 @@ namespace Common
                 new WorkflowOptions(RunWorkflowIdPrefix, options.TaskQueue));
 
         /// <summary>
-        /// Crea el Schedule si todavía no existe. Idempotente: un segundo arranque del worker
-        /// captura <see cref="ScheduleAlreadyRunningException"/> y devuelve <c>false</c>;
-        /// cualquier otro error de RPC propaga.
+        /// Deja el Schedule como lo describe <paramref name="options"/> (spec 15, M-3): lo crea si
+        /// no existe; si ya existía y difiere (<see cref="Differs"/>), lo actualiza conservando su
+        /// estado (pausado y nota); si coincide, no escribe nada. Cualquier otro error de RPC
+        /// propaga.
         /// </summary>
-        /// <returns><c>true</c> si lo creó en esta llamada, <c>false</c> si ya existía.</returns>
-        public static async Task<bool> EnsureScheduleAsync(ITemporalClient client, MonitorOptions options)
+        public static async Task<ScheduleEnsureResult> EnsureScheduleAsync(
+            ITemporalClient client, MonitorOptions options)
         {
-            var schedule = new Schedule(BuildAction(options), BuildSpec(options))
+            var desired = new Schedule(BuildAction(options), BuildSpec(options))
             {
                 Policy = BuildPolicy(options),
             };
 
             try
             {
-                await client.CreateScheduleAsync(options.ScheduleId, schedule).ConfigureAwait(false);
-                return true;
+                await client.CreateScheduleAsync(options.ScheduleId, desired).ConfigureAwait(false);
+                return ScheduleEnsureResult.Created;
             }
             catch (ScheduleAlreadyRunningException)
             {
-                return false;
+                // Ya existía: se compara contra el vigente más abajo.
             }
+
+            var handle = client.GetScheduleHandle(options.ScheduleId);
+            var description = await handle.DescribeAsync().ConfigureAwait(false);
+            if (!Differs(description.Schedule, options))
+            {
+                return ScheduleEnsureResult.Unchanged;
+            }
+
+            await handle.UpdateAsync(input => new ScheduleUpdate(new Schedule(desired.Action, desired.Spec)
+            {
+                Policy = desired.Policy,
+                // Pausa y nota las maneja el operador (API de control), no la configuración.
+                State = input.Description.Schedule.State,
+            })).ConfigureAwait(false);
+            return ScheduleEnsureResult.Updated;
         }
+
+        /// <summary>
+        /// Pura y sin cluster: <c>true</c> si el Schedule vigente se aparta de lo que gobierna
+        /// <paramref name="desired"/> — intervalo, <c>CatchupWindow</c>, <c>Overlap</c>, task queue
+        /// y workflow type de la acción. No compara el estado (pausa y nota).
+        /// </summary>
+        public static bool Differs(Schedule current, MonitorOptions desired)
+        {
+            var intervals = current.Spec.Intervals;
+            if (intervals is null || intervals.Count != 1 || intervals.First().Every != desired.Interval)
+            {
+                return true;
+            }
+
+            if (current.Policy.CatchupWindow != desired.CatchupWindow ||
+                current.Policy.Overlap != ScheduleOverlapPolicy.Skip)
+            {
+                return true;
+            }
+
+            if (current.Action is not ScheduleActionStartWorkflow action)
+            {
+                return true;
+            }
+
+            var expected = BuildAction(desired);
+            return action.Workflow != expected.Workflow ||
+                   action.Options.TaskQueue != desired.TaskQueue;
+        }
+    }
+
+    /// <summary>Resultado de <see cref="ScheduleBootstrapper.EnsureScheduleAsync"/>.</summary>
+    public enum ScheduleEnsureResult
+    {
+        Created,
+        Updated,
+        Unchanged,
     }
 }

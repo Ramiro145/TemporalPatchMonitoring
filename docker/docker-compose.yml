@@ -84,7 +84,7 @@ services:
       # Descubrimiento en dos niveles (spec 03). Topes por corrida y ventana de cerradas.
       - DISCOVERY_LOOKBACK_DAYS=7
       - DISCOVERY_MAX_EXECUTIONS=500
-      - DISCOVERY_MAX_HISTORIES=200
+      - DISCOVERY_MAX_HISTORIES=500
       # Resolución de fase (spec 04). Horas que una ejecución sin marker debe superar al
       # último marker para leerse como fase 3 (código limpio).
       - PHASE_CLEAN_GRACE_HOURS=24

@@ -60,7 +60,7 @@ public class MonitorWorkflow : IMonitorWorkflow
                 var revisionBefore = before?.Revision ?? 0;
 
                 var assessment = await Workflow
-                    .ExecuteActivityAsync((PhaseActivities a) => a.AssessPatch(patch), Options)
+                    .ExecuteActivityAsync((PhaseActivities a) => a.AssessPatch(patch, before), Options)
                     .ConfigureAwait(true);
 
                 var input = new PatchAssessmentInput(

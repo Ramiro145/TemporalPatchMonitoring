@@ -1,6 +1,7 @@
 using Contracts.Discovery;
 using Contracts.Domain;
 using Contracts.Phase;
+using Contracts.State;
 
 namespace PatchMonitor.Services;
 
@@ -27,10 +28,10 @@ public sealed class PhaseResolver : IPhaseResolver
         _clock = clock;
     }
 
-    public PhaseResolution Resolve(PatchDiscoveryResult result)
+    public PhaseResolution Resolve(PatchDiscoveryResult result, PatchState? previous = null)
     {
         var now = _clock.GetUtcNow();
-        var inferred = Infer(result, now);
+        var inferred = KeepCleanWithoutNewEvidence(Infer(result, now), result, previous, now);
 
         // Caso 1: un override vigente del operador gana siempre, sin validarse contra la fase
         // inferida ni contra PhaseTransition.IsLegal (eso es del spec 08, al escribirlo por
@@ -48,6 +49,31 @@ public sealed class PhaseResolver : IPhaseResolver
         }
 
         return inferred;
+    }
+
+    /// <summary>
+    /// Spec 15 (M-6): <c>Clean</c> no retrocede sin evidencia nueva. Al correrse la ventana de
+    /// lookback, la tasa <c>p</c> de la Capa 2 cambia (caen primero ejecuciones viejas con marker)
+    /// y la inferencia puede volver a <c>Deprecated</c> sin ningún hecho nuevo. Si el estado
+    /// durable ya estaba en <c>Clean</c> por inferencia (no por override) y ninguna ejecución con
+    /// marker arrancó después de ese cambio, se conserva <c>Clean</c>. Una ejecución con marker
+    /// posterior (reintroducción real del patch) saca de <c>Clean</c> como siempre.
+    /// </summary>
+    private static PhaseResolution KeepCleanWithoutNewEvidence(
+        PhaseResolution inferred, PatchDiscoveryResult result, PatchState? previous, DateTimeOffset now)
+    {
+        if (previous is not { Phase: PatchPhase.Clean, Source: PhaseSource.Inferred, LastChangedAt: { } since }
+            || inferred.Phase == PatchPhase.Clean)
+        {
+            return inferred;
+        }
+
+        if (result.Executions.Snapshots.Any(s => HasMarker(s) && s.StartTime > since))
+        {
+            return inferred;
+        }
+
+        return Inferred(PatchPhase.Clean, $"se conserva Clean: sin markers nuevos desde {since:o}", now);
     }
 
     /// <summary>

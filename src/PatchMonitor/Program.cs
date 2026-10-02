@@ -1,3 +1,4 @@
+using Common.Temporal;
 using Microsoft.Extensions.DependencyInjection;
 using Common;
 using Contracts;
@@ -17,11 +18,11 @@ var provider = services.BuildServiceProvider();
 
 // El Schedule lo crea el worker que va a atender sus ejecuciones, no la API ni un servicio
 // one-shot: un Schedule sin worker escuchando solo acumula ticks fallidos. La creación es
-// idempotente (EnsureScheduleAsync captura ScheduleAlreadyRunningException).
+// idempotente: crea el Schedule si falta y lo actualiza si difiere de la configuración (spec 15).
 var monitorOptions = provider.GetRequiredService<MonitorOptions>();
 var clusterOptions = provider.GetRequiredService<MonitorClusterOptions>();
 var discoveryOptions = provider.GetRequiredService<DiscoveryOptions>();
-var scheduleClient = await provider.GetRequiredService<Lazy<Task<ITemporalClient>>>().Value;
+var scheduleClient = await provider.GetRequiredService<ResettableAsyncLazy<ITemporalClient>>().GetValueAsync();
 
 // Guarda de auto-observación (spec 12): si el cluster/namespace propio coincide con el
 // observado, el monitor se va a descubrir a sí mismo. Nunca bloquea (convención del repo).
@@ -33,13 +34,26 @@ if (clusterOptions.Host == discoveryOptions.TargetHost &&
         $"('{clusterOptions.Host}', '{clusterOptions.Namespace}') coincide con el observado.");
 }
 
+// Topes incoherentes (spec 15, M-7): las ejecuciones listadas más allá de MaxHistories no se
+// inspeccionan, quedan Unknown y dejan los patches en Inconclusive. Nunca bloquea.
+if (discoveryOptions.MaxHistories < discoveryOptions.MaxExecutions)
+{
+    Console.WriteLine(
+        $"ADVERTENCIA: DISCOVERY_MAX_HISTORIES ({discoveryOptions.MaxHistories}) es menor que " +
+        $"DISCOVERY_MAX_EXECUTIONS ({discoveryOptions.MaxExecutions}): las ejecuciones que " +
+        $"excedan el primero no se inspeccionan y los patches pueden quedar Inconclusive.");
+}
+
 // Namespace propio del monitor: se crea si no existe antes de tocar el Schedule (spec 12).
 await NamespaceBootstrapper.EnsureNamespaceAsync(scheduleClient, clusterOptions.Namespace);
 
-var created = await ScheduleBootstrapper.EnsureScheduleAsync(scheduleClient, monitorOptions);
-Console.WriteLine(created
-    ? $"Schedule '{monitorOptions.ScheduleId}' creado."
-    : $"Schedule '{monitorOptions.ScheduleId}' ya existía.");
+var ensured = await ScheduleBootstrapper.EnsureScheduleAsync(scheduleClient, monitorOptions);
+Console.WriteLine(ensured switch
+{
+    ScheduleEnsureResult.Created => $"Schedule '{monitorOptions.ScheduleId}' creado.",
+    ScheduleEnsureResult.Updated => $"Schedule '{monitorOptions.ScheduleId}' actualizado: difería de la configuración.",
+    _ => $"Schedule '{monitorOptions.ScheduleId}' ya existía y coincide con la configuración.",
+});
 
 await WorkerHost.RunAsync<HealthWorkflow>(
     taskQueue,

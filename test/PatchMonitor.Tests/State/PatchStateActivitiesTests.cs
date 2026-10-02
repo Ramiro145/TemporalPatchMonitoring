@@ -1,3 +1,4 @@
+using Common.Temporal;
 using Common.State;
 using Contracts.Domain;
 using Contracts.Phase;
@@ -48,7 +49,7 @@ public class PatchStateActivitiesTests
             StateOptions.DefaultContinueAsNewThreshold,
             StateOptions.DefaultHistoryLimit,
             taskQueue);
-        var client = new Lazy<Task<ITemporalClient>>(() => Task.FromResult<ITemporalClient>(env.Client));
+        var client = new ResettableAsyncLazy<ITemporalClient>(() => Task.FromResult<ITemporalClient>(env.Client));
         var store = new TemporalPatchStateStore(client, options, new NoopDecisionSink());
         var overrideCache = new InMemoryPhaseOverrideStore();
         var activities = new PatchStateActivities(store, overrideCache);

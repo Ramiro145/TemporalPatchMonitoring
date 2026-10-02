@@ -1,3 +1,4 @@
+using Common.Temporal;
 using System.Linq.Expressions;
 using Common;
 using Contracts.Domain;
@@ -19,12 +20,12 @@ namespace Common.State;
 /// </summary>
 public sealed class TemporalPatchStateStore : IPatchStateStore
 {
-    private readonly Lazy<Task<ITemporalClient>> _client;
+    private readonly ResettableAsyncLazy<ITemporalClient> _client;
     private readonly StateOptions _options;
     private readonly IDecisionSink _sink;
 
     public TemporalPatchStateStore(
-        Lazy<Task<ITemporalClient>> client, StateOptions options, IDecisionSink sink)
+        ResettableAsyncLazy<ITemporalClient> client, StateOptions options, IDecisionSink sink)
     {
         _client = client;
         _options = options;
@@ -61,7 +62,7 @@ public sealed class TemporalPatchStateStore : IPatchStateStore
 
     public async Task<PatchState?> GetStateAsync(PatchKey key, CancellationToken ct = default)
     {
-        var client = await _client.Value.ConfigureAwait(false);
+        var client = await _client.GetValueAsync().ConfigureAwait(false);
         var workflowId = key.ToWorkflowId();
 
         var (exists, _, error) = await WorkflowValidator
@@ -92,7 +93,7 @@ public sealed class TemporalPatchStateStore : IPatchStateStore
 
     public async Task<IReadOnlyList<PatchKey>> ListAsync(CancellationToken ct = default)
     {
-        var client = await _client.Value.ConfigureAwait(false);
+        var client = await _client.GetValueAsync().ConfigureAwait(false);
 
         var (exists, _, error) = await WorkflowValidator
             .ValidateWorkflowAsync(client, StateOptions.RegistryWorkflowId).ConfigureAwait(false);
@@ -161,7 +162,7 @@ public sealed class TemporalPatchStateStore : IPatchStateStore
         Expression<Func<T, Task>> signalCall)
         where T : class
     {
-        var client = await _client.Value.ConfigureAwait(false);
+        var client = await _client.GetValueAsync().ConfigureAwait(false);
         var options = new WorkflowOptions(workflowId, _options.TaskQueue);
 
         WorkflowHandle<T> handle;
@@ -182,7 +183,7 @@ public sealed class TemporalPatchStateStore : IPatchStateStore
     // start idempotente (crea-o-recupera) lo garantiza sin carrera.
     private async Task<WorkflowHandle<IPatchStateWorkflow>> EnsureEntityAsync(PatchKey key)
     {
-        var client = await _client.Value.ConfigureAwait(false);
+        var client = await _client.GetValueAsync().ConfigureAwait(false);
         var workflowId = key.ToWorkflowId();
         var options = new WorkflowOptions(workflowId, _options.TaskQueue);
 

@@ -54,6 +54,16 @@ public class DiscoveryOptionsTests
     }
 
     [Fact]
+    public void Los_topes_por_defecto_son_coherentes_y_valen_500()
+    {
+        var options = WithEnv(new Dictionary<string, string?>());
+
+        Assert.Equal(500, options.MaxExecutions);
+        Assert.Equal(500, options.MaxHistories);
+        Assert.True(options.MaxHistories >= options.MaxExecutions);
+    }
+
+    [Fact]
     public void Cada_variable_seteada_con_valor_valido_se_respeta()
     {
         var options = WithEnv(new Dictionary<string, string?>

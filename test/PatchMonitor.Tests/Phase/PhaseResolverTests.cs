@@ -1,5 +1,6 @@
 using Contracts.Domain;
 using Contracts.Phase;
+using Contracts.State;
 using PatchMonitor.Services;
 using Xunit;
 using static PatchMonitor.Tests.Domain.ExecutionSnapshotBuilder;
@@ -293,6 +294,108 @@ public class PhaseResolverTests
         var res = Resolver().Resolve(Of(Open().WithDeprecatedMarker().StartedAt(T0)));
 
         Assert.Equal(PhaseSource.Inferred, res.Source);
+    }
+
+    // ── Spec 15 (M-6): Clean no retrocede sin evidencia nueva ──────────────────
+
+    private static readonly TimeSpan Grace24h = TimeSpan.FromHours(24);
+
+    // Un marker deprecado en T0, 9 ejecuciones sin marker antes del corte (p = 0.1 ⇒ N = 29) y
+    // solo 28 después: sin estado previo la Capa 2 NO alcanza para Clean (ventana ya corrida).
+    private static PatchMonitor.Tests.Domain.ExecutionSnapshotBuilder[] WindowSlidWithP01() =>
+        new[] { Closed().WithDeprecatedMarker().StartedAt(T0) }
+            .Concat(Enumerable.Range(1, 9).Select(i => Closed().WithoutMarker().StartedAt(T0.AddHours(i))))
+            .Concat(Enumerable.Range(1, 28)
+                .Select(i => Closed().WithoutMarker().StartedAt(T0 + Grace24h + TimeSpan.FromHours(i))))
+            .ToArray();
+
+    private static PatchState CleanState(
+        DateTimeOffset? changedAt, PhaseSource source = PhaseSource.Inferred, PatchPhase phase = PatchPhase.Clean) =>
+        PatchState.Initial(Key) with { Phase = phase, Source = source, LastChangedAt = changedAt };
+
+    [Fact]
+    public void M6_control_sin_estado_previo_la_ventana_corrida_no_alcanza_para_Clean()
+    {
+        var res = Resolver(cleanGrace: Grace24h).Resolve(Of(WindowSlidWithP01()), previous: null);
+
+        Assert.NotEqual(PatchPhase.Clean, res.Phase);
+    }
+
+    [Fact]
+    public void M6_previous_Clean_inferido_sin_markers_nuevos_conserva_Clean()
+    {
+        var changedAt = T0.AddDays(10);
+
+        var res = Resolver(cleanGrace: Grace24h).Resolve(Of(WindowSlidWithP01()), CleanState(changedAt));
+
+        Assert.Equal(PatchPhase.Clean, res.Phase);
+        Assert.Equal(PhaseSource.Inferred, res.Source);
+        Assert.Contains("se conserva Clean", res.Reason);
+        Assert.Contains($"{changedAt:o}", res.Reason);
+    }
+
+    [Fact]
+    public void M6_un_marker_posterior_a_LastChangedAt_saca_de_Clean()
+    {
+        var changedAt = T0.AddDays(10);
+        var executions = WindowSlidWithP01()
+            .Append(Closed().WithDeprecatedMarker().StartedAt(changedAt.AddDays(1)))
+            .ToArray();
+
+        var res = Resolver(cleanGrace: Grace24h).Resolve(Of(executions), CleanState(changedAt));
+
+        Assert.NotEqual(PatchPhase.Clean, res.Phase);
+    }
+
+    [Fact]
+    public void M6_un_marker_anterior_a_LastChangedAt_no_cuenta_como_evidencia_nueva()
+    {
+        var changedAt = T0.AddDays(10);
+        var executions = WindowSlidWithP01()
+            .Append(Closed().WithMarker().StartedAt(changedAt.AddMinutes(-1)))
+            .ToArray();
+
+        var res = Resolver(cleanGrace: Grace24h).Resolve(Of(executions), CleanState(changedAt));
+
+        Assert.Equal(PatchPhase.Clean, res.Phase);
+    }
+
+    [Fact]
+    public void M6_previous_con_Source_Override_no_activa_la_regla()
+    {
+        var res = Resolver(cleanGrace: Grace24h).Resolve(
+            Of(WindowSlidWithP01()), CleanState(T0.AddDays(10), PhaseSource.Override));
+
+        Assert.NotEqual(PatchPhase.Clean, res.Phase);
+    }
+
+    [Fact]
+    public void M6_previous_Clean_sin_LastChangedAt_no_activa_la_regla()
+    {
+        var res = Resolver(cleanGrace: Grace24h).Resolve(Of(WindowSlidWithP01()), CleanState(changedAt: null));
+
+        Assert.NotEqual(PatchPhase.Clean, res.Phase);
+    }
+
+    [Fact]
+    public void M6_previous_en_otra_fase_no_activa_la_regla()
+    {
+        var res = Resolver(cleanGrace: Grace24h).Resolve(
+            Of(WindowSlidWithP01()), CleanState(T0.AddDays(10), phase: PatchPhase.Deprecated));
+
+        Assert.NotEqual(PatchPhase.Clean, res.Phase);
+    }
+
+    [Fact]
+    public void M6_un_override_vigente_gana_aunque_el_previous_sea_Clean()
+    {
+        var store = new InMemoryPhaseOverrideStore();
+        store.Set(ActiveOverride(PatchPhase.Deprecated));
+
+        var res = Resolver(store, Grace24h).Resolve(Of(WindowSlidWithP01()), CleanState(T0.AddDays(10)));
+
+        Assert.Equal(PatchPhase.Deprecated, res.Phase);
+        Assert.Equal(PhaseSource.Override, res.Source);
     }
 
     private sealed class StubOverrideStore : IPhaseOverrideStore

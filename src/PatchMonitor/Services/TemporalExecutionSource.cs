@@ -1,3 +1,4 @@
+using Common.Temporal;
 using System.Text.Json;
 using Google.Protobuf;
 using Temporalio.Api.Common.V1;
@@ -33,7 +34,7 @@ public sealed class TemporalExecutionSource : IExecutionSource
     private const string ChangeVersionAttribute = "TemporalChangeVersion";
     private const int PageSize = 100;
 
-    private readonly Lazy<Task<ITemporalClient>> _client;
+    private readonly ResettableAsyncLazy<ITemporalClient> _client;
     private readonly string _namespace;
     private readonly string _targetHost;
 
@@ -41,7 +42,7 @@ public sealed class TemporalExecutionSource : IExecutionSource
     {
         _namespace = options.Namespace;
         _targetHost = options.TargetHost;
-        _client = new Lazy<Task<ITemporalClient>>(ConnectAsync);
+        _client = new ResettableAsyncLazy<ITemporalClient>(ConnectAsync);
     }
 
     private async Task<ITemporalClient> ConnectAsync()
@@ -56,7 +57,7 @@ public sealed class TemporalExecutionSource : IExecutionSource
     public async Task<ExecutionListPage> ListExecutionsAsync(
         ExecutionListFilter filter, CancellationToken ct = default)
     {
-        var client = await _client.Value.ConfigureAwait(false);
+        var client = await _client.GetValueAsync().ConfigureAwait(false);
 
         var queries = new List<string> { "ExecutionStatus = 'Running'" };
         if (!filter.OpenOnly)
@@ -121,7 +122,7 @@ public sealed class TemporalExecutionSource : IExecutionSource
     public async Task<IReadOnlyList<PatchMarker>> ReadPatchMarkersAsync(
         string workflowId, string runId, CancellationToken ct = default)
     {
-        var client = await _client.Value.ConfigureAwait(false);
+        var client = await _client.GetValueAsync().ConfigureAwait(false);
 
         // deprecated es "pegajoso": una vez que una ejecución ve el flag puesto, se queda así.
         var deprecatedByPatch = new Dictionary<string, bool>(StringComparer.Ordinal);

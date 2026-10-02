@@ -1,6 +1,7 @@
 using Contracts.Domain;
 using Contracts.Domain.Gates;
 using Contracts.Phase;
+using Contracts.State;
 using PatchMonitor.Activities;
 using PatchMonitor.Services;
 using Xunit;
@@ -72,5 +73,25 @@ public class PhaseActivitiesTests
         Assert.Equal(PatchPhase.Coexistence, assessment.Resolution.Phase);
         Assert.NotNull(assessment.Verdict);
         Assert.Equal(GateOutcome.Ready, assessment.Verdict!.Outcome);
+    }
+
+    [Fact]
+    public void Con_previous_Clean_y_sin_markers_nuevos_se_conserva_Clean_con_Verdict_null()
+    {
+        // Sin previous esto es Deprecated (marker deprecado reciente sin ausencias posteriores).
+        var executions = Of(Closed().WithDeprecatedMarker().StartedAt(T0));
+        var previous = PatchState.Initial(Key) with
+        {
+            Phase = PatchPhase.Clean,
+            Source = PhaseSource.Inferred,
+            LastChangedAt = T0.AddDays(5),
+        };
+
+        var without = Activities().AssessPatch(executions);
+        var with = Activities().AssessPatch(executions, previous);
+
+        Assert.Equal(PatchPhase.Deprecated, without.Resolution.Phase);
+        Assert.Equal(PatchPhase.Clean, with.Resolution.Phase);
+        Assert.Null(with.Verdict);
     }
 }

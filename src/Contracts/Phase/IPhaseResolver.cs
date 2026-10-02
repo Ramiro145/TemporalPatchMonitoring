@@ -1,4 +1,5 @@
 using Contracts.Discovery;
+using Contracts.State;
 
 namespace Contracts.Phase;
 
@@ -9,6 +10,11 @@ namespace Contracts.Phase;
 /// </summary>
 public interface IPhaseResolver
 {
-    /// <summary>La fase inferida (o el override vigente) para <paramref name="result"/>.</summary>
-    PhaseResolution Resolve(PatchDiscoveryResult result);
+    /// <summary>
+    /// La fase inferida (o el override vigente) para <paramref name="result"/>.
+    /// <paramref name="previous"/> es el estado durable del patch en la pasada anterior (o
+    /// <c>null</c> si aún no existe); permite conservar <c>Clean</c> cuando la evidencia sale de
+    /// la ventana de lookback sin que haya ninguna novedad (spec 15, M-6).
+    /// </summary>
+    PhaseResolution Resolve(PatchDiscoveryResult result, PatchState? previous);
 }

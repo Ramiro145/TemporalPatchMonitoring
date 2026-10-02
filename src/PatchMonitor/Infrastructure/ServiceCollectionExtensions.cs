@@ -1,3 +1,4 @@
+using Common.Temporal;
 using Common.State;
 using Contracts.Discovery;
 using Contracts.Domain.Gates;
@@ -50,7 +51,7 @@ public static class ServiceCollectionExtensions
         // como Lazy<Task<...>> con la misma forma que TemporalExecutionSource. El sink es no-op
         // por default; un adaptador real (SQL u otro) es trabajo futuro.
         services.AddSingleton(_ => StateOptions.FromEnvironment());
-        services.AddSingleton(sp => new Lazy<Task<ITemporalClient>>(async () =>
+        services.AddSingleton(sp => new ResettableAsyncLazy<ITemporalClient>(async () =>
         {
             var clusterOptions = sp.GetRequiredService<MonitorClusterOptions>();
             return (ITemporalClient)await TemporalClient.ConnectAsync(new TemporalClientConnectOptions

@@ -1,3 +1,4 @@
+using Common.Temporal;
 using Common.State;
 using Contracts.Domain;
 using Contracts.Phase;
@@ -50,7 +51,7 @@ public class TemporalPatchStateStoreTests
             StateOptions.DefaultContinueAsNewThreshold,
             StateOptions.DefaultHistoryLimit,
             taskQueue);
-        var client = new Lazy<Task<ITemporalClient>>(() => Task.FromResult<ITemporalClient>(env.Client));
+        var client = new ResettableAsyncLazy<ITemporalClient>(() => Task.FromResult<ITemporalClient>(env.Client));
         var store = new TemporalPatchStateStore(client, options, sink);
 
         await worker.ExecuteAsync(() => body(store));
