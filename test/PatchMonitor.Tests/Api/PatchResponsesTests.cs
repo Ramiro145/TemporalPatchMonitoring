@@ -97,6 +97,13 @@ public class PatchResponsesTests
         Assert.Equal(PatchPhase.Unknown, summary.Phase);
         Assert.False(summary.HasOverride);
         Assert.Equal(0, summary.Revision);
+        Assert.Equal("el entity no responde", summary.Error);
+    }
+
+    [Fact]
+    public void FromState_deja_Error_en_null()
+    {
+        Assert.Null(PatchSummaryResponse.FromState(BuildState(withOverride: false)).Error);
     }
 
     [Fact]

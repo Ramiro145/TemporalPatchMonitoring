@@ -86,8 +86,10 @@ public class PatchEndpointsTests
         Assert.Equal(2, result.Value!.Count);
         var unreadable = result.Value.Patches.Single(p => p.PatchId == KeyB.PatchId);
         Assert.Equal(PatchPhase.Unknown, unreadable.Phase);
+        Assert.False(string.IsNullOrWhiteSpace(unreadable.Error));
         var ok = result.Value.Patches.Single(p => p.PatchId == KeyA.PatchId);
         Assert.Equal(PatchPhase.Coexistence, ok.Phase);
+        Assert.Null(ok.Error);
     }
 
     [Fact]

@@ -61,7 +61,7 @@ app.UseSwaggerUI(c =>
 app.MapGet("/health", async (TemporalClient client) =>
 {
     var probe = await WorkflowValidator.ValidateWorkflowAsync(client, $"health-probe-{Guid.NewGuid()}");
-    var reachable = probe.Exists || probe.Error == WorkflowValidator.NotFoundError;
+    var reachable = probe.Exists || probe.NotFound;
 
     return Results.Ok(new
     {

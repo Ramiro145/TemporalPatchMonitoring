@@ -28,6 +28,8 @@ export interface PatchSummary {
   revision: number;
   lastObservedAt: string | null;
   lastChangedAt: string | null;
+  // Motivo por el que la key no se pudo leer (PatchSummaryResponse.Unreadable); null si se leyó.
+  error: string | null;
 }
 
 export interface PatchListResponse {

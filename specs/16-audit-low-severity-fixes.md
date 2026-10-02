@@ -91,6 +91,11 @@ historia no se lee y aparece un entity fantasma. Comparte zona con B-3.
     inexistente en el namespace `monitor`. Si devuelve `StatusCode.NotFound`, se elimina el match
     `"no rows in result set"`; si no, se aísla en un único `TemporalErrors.IsNotFound(RpcException)`
     en `src/Common/Temporal/` con su test y un comentario con el código observado.
+  - **Resultado de la verificación (2026-10-02, paso 4):** contra el Temporal de `ssy-yardflow`
+    (persistencia Postgres, `localhost:7233`) y SDK `Temporalio` 1.9.0, `DescribeAsync` de un id
+    inexistente lanza `RpcException` con `Code = NotFound` y mensaje
+    `workflow not found for ID: <id>`, tanto en `monitor` como en `default`. El fallback por texto
+    `"no rows in result set"` no se dispara: se **elimina** (sin `TemporalErrors.IsNotFound`).
   - `src/Common/Temporal/WorkflowValidator.cs`: el resultado expone `bool NotFound`;
     `TemporalPatchStateStore` (líneas ~73 y ~103) y `/health` en `src/MonitorApi/Program.cs`
     dejan de comparar `error == WorkflowValidator.NotFoundError`.

@@ -7,13 +7,14 @@ namespace Contracts.Api;
 /// <summary>
 /// Resumen de un patch para <c>GET /patches</c>: no lleva <see cref="PatchState.History"/> —un
 /// listado de <see cref="ApiOptions.MaxListPatches"/> patches no puede arrastrar cada uno su
-/// ring buffer.
+/// ring buffer. <see cref="Error"/> es <c>null</c> en un resumen normal y lleva el motivo cuando
+/// la key no se pudo leer (<see cref="Unreadable"/>).
 /// </summary>
 public sealed record PatchSummaryResponse(
     string Namespace, string WorkflowType, string PatchId,
     PatchPhase Phase, PhaseSource Source, GateOutcome? Outcome, PatchPhase? NextPhase,
     int BlockingExecutionCount, bool HasOverride, int Revision,
-    DateTimeOffset? LastObservedAt, DateTimeOffset? LastChangedAt)
+    DateTimeOffset? LastObservedAt, DateTimeOffset? LastChangedAt, string? Error = null)
 {
     public static PatchSummaryResponse FromState(PatchState state) =>
         new(
@@ -32,7 +33,8 @@ public sealed record PatchSummaryResponse(
 
     /// <summary>
     /// La key está en el registry pero su entity no responde: entra al listado con
-    /// <see cref="PatchPhase.Unknown"/> en vez de tirar abajo el request entero.
+    /// <see cref="PatchPhase.Unknown"/> en vez de tirar abajo el request entero, y con el
+    /// <paramref name="reason"/> en <see cref="Error"/> para que el operador vea por qué.
     /// </summary>
     public static PatchSummaryResponse Unreadable(PatchKey key, string reason) =>
         new(
@@ -47,7 +49,8 @@ public sealed record PatchSummaryResponse(
             HasOverride: false,
             Revision: 0,
             LastObservedAt: null,
-            LastChangedAt: null);
+            LastChangedAt: null,
+            Error: reason);
 }
 
 /// <summary>Estado durable completo de un patch para <c>GET /patches/{ns}/{type}/{patchId}</c>.</summary>

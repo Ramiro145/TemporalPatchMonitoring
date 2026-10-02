@@ -15,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 // Ready primero (accionables), después Blocked, después Inconclusive; sin veredicto al final.
 function outcomeRank(outcome: number | null): number {
@@ -28,10 +29,10 @@ function patchDetailPath(ns: string, type: string, patchId: string): string {
   return `/patches/${encodeURIComponent(ns)}/${encodeURIComponent(type)}/${encodeURIComponent(patchId)}`
 }
 
-// PatchSummaryResponse.Unreadable (PatchEndpoints.cs) usa esta firma exacta: la key está en el
-// registry pero su entity no responde. Se distingue de la fase Unknown genuina.
+// PatchSummaryResponse.Unreadable (PatchEndpoints.cs): la key está en el registry pero su entity
+// no responde; la API manda el motivo en `error`. Se distingue de la fase Unknown genuina.
 function isUnreadable(patch: PatchSummary): boolean {
-  return patch.phase === 0 && patch.revision === 0
+  return patch.error != null
 }
 
 export default function Dashboard() {
@@ -109,7 +110,12 @@ export default function Dashboard() {
                     <TableCell>{patch.namespace}</TableCell>
                     <TableCell>
                       {unreadable ? (
-                        <Badge variant="destructive">Ilegible</Badge>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge variant="destructive">Ilegible</Badge>
+                          </TooltipTrigger>
+                          <TooltipContent>{patch.error}</TooltipContent>
+                        </Tooltip>
                       ) : (
                         <PhaseBadge phase={patch.phase} />
                       )}

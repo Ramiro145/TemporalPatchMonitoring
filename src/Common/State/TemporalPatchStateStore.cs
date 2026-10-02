@@ -65,12 +65,12 @@ public sealed class TemporalPatchStateStore : IPatchStateStore
         var client = await _client.GetValueAsync().ConfigureAwait(false);
         var workflowId = key.ToWorkflowId();
 
-        var (exists, _, error) = await WorkflowValidator
+        var (exists, notFound, _, error) = await WorkflowValidator
             .ValidateWorkflowAsync(client, workflowId).ConfigureAwait(false);
 
         if (!exists)
         {
-            if (error == WorkflowValidator.NotFoundError)
+            if (notFound)
             {
                 return null;
             }
@@ -95,12 +95,12 @@ public sealed class TemporalPatchStateStore : IPatchStateStore
     {
         var client = await _client.GetValueAsync().ConfigureAwait(false);
 
-        var (exists, _, error) = await WorkflowValidator
+        var (exists, notFound, _, error) = await WorkflowValidator
             .ValidateWorkflowAsync(client, StateOptions.RegistryWorkflowId).ConfigureAwait(false);
 
         if (!exists)
         {
-            if (error == WorkflowValidator.NotFoundError)
+            if (notFound)
             {
                 return Array.Empty<PatchKey>();
             }
