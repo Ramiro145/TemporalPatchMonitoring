@@ -18,6 +18,12 @@ namespace Common.Temporal
         // que DiscoveryOptions.MaxExecutions (tope defensivo, nunca ilimitado).
         private const int MaxScanned = 500;
 
+        private const string MonitorWorkflowType = "MonitorWorkflow";
+
+        // Ventana de la primera pasada (spec 15, M-8): con el tick de 5 minutos son ~288 corridas
+        // por día, por debajo del tope de escaneo, así que las más recientes siempre entran.
+        private static readonly TimeSpan RecentWindow = TimeSpan.FromHours(24);
+
         private readonly ResettableAsyncLazy<ITemporalClient> _client;
 
         public TemporalMonitorRunReader(ResettableAsyncLazy<ITemporalClient> client)
@@ -28,21 +34,46 @@ namespace Common.Temporal
         public async Task<IReadOnlyList<MonitorRunView>> ListRecentAsync(int limit, CancellationToken ct = default)
         {
             var client = await _client.GetValueAsync().ConfigureAwait(false);
-            var scanned = new List<WorkflowExecution>(Math.Min(limit, MaxScanned));
+            var scanned = new Dictionary<string, WorkflowExecution>(StringComparer.Ordinal);
 
+            // Primera pasada: query simple por StartTime (las compuestas con WorkflowType están
+            // prohibidas en la standard visibility, Construction.md §4 restricción #1). El tipo se
+            // filtra en memoria.
+            var examined = 0;
             await foreach (var execution in client
-                .ListWorkflowsAsync("WorkflowType = 'MonitorWorkflow'")
+                .ListWorkflowsAsync(BuildWindowQuery(DateTimeOffset.UtcNow, RecentWindow))
                 .WithCancellation(ct))
             {
-                scanned.Add(execution);
-                if (scanned.Count >= MaxScanned)
+                examined++;
+                if (execution.WorkflowType == MonitorWorkflowType)
+                {
+                    scanned[execution.RunId] = execution;
+                }
+
+                if (examined >= MaxScanned)
                 {
                     break;
                 }
             }
 
+            // Respaldo: con el Schedule pausado la ventana puede juntar pocas corridas; se
+            // completa con el escaneo por WorkflowType, sin duplicar RunId.
+            if (scanned.Count < limit)
+            {
+                await foreach (var execution in client
+                    .ListWorkflowsAsync($"WorkflowType = '{MonitorWorkflowType}'")
+                    .WithCancellation(ct))
+                {
+                    scanned.TryAdd(execution.RunId, execution);
+                    if (scanned.Count >= MaxScanned)
+                    {
+                        break;
+                    }
+                }
+            }
+
             var views = new List<MonitorRunView>(limit);
-            foreach (var execution in scanned.OrderByDescending(e => e.StartTime).Take(limit))
+            foreach (var execution in scanned.Values.OrderByDescending(e => e.StartTime).Take(limit))
             {
                 views.Add(new MonitorRunView(
                     execution.Id,
@@ -54,6 +85,18 @@ namespace Common.Temporal
             }
 
             return views;
+        }
+
+        /// <summary>
+        /// Query simple de Visibility para las corridas de los últimos <paramref name="window"/>:
+        /// <c>StartTime BETWEEN since AND until</c>, con un día de margen hacia adelante por
+        /// desfasaje de reloj, igual que el listado del descubrimiento.
+        /// </summary>
+        public static string BuildWindowQuery(DateTimeOffset now, TimeSpan window)
+        {
+            var since = now.UtcDateTime - window;
+            var until = now.UtcDateTime.AddDays(1);
+            return $"StartTime BETWEEN '{since:yyyy-MM-ddTHH:mm:ssZ}' AND '{until:yyyy-MM-ddTHH:mm:ssZ}'";
         }
 
         // Solo se intenta para corridas que cerraron con éxito; cualquier error de

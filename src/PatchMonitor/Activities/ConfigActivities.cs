@@ -25,5 +25,6 @@ public class ConfigActivities
         new(
             _monitorOptions.MaxPatchesPerRun,
             _notificationOptions.Enabled,
-            _notificationOptions.MaxAttempts);
+            _notificationOptions.MaxAttempts,
+            Math.Max(1, (int)_monitorOptions.Interval.TotalMinutes));
 }

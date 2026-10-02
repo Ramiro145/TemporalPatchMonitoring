@@ -99,6 +99,7 @@ export interface MonitorRunSummary {
   errors: string[];
   notificationsSent: number;
   notificationsFailed: number;
+  patchesSkipped: number;
 }
 
 export interface MonitorRun {

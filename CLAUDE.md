@@ -41,8 +41,14 @@ cambios de arquitectura.
 - **Spec 14** (correcciones de severidad alta de la auditoría `Audtioria_pathmonitor.md`):
   notificar es consultar → enviar → reclamar (un fallo nunca cuenta como enviado y se reintenta en el
   tick siguiente), `ContinuedAsNew` es una run cerrada (`IsOpen()` solo `Running`) y los workflows
-  no leen el entorno. Los medios (M-2 a M-9) y bajos (B-1 a B-8) más la seguridad opcional quedan
-  para los specs 15 y 16 (`Construction.md` §7, pendientes de `/spec`).
+  no leen el entorno.
+- **Spec 15** (correcciones de severidad media, M-2 a M-9): `/health/workflow` reusa el cliente,
+  `EnsureScheduleAsync` es create-or-update (`ScheduleEnsureResult`), `restart: unless-stopped`,
+  `ResettableAsyncLazy` en lugar de `Lazy<Task<ITemporalClient>>`, `Clean` conservado sin evidencia
+  nueva (`Resolve`/`AssessPatch` reciben el estado previo), `DISCOVERY_MAX_HISTORIES` = 500,
+  `GET /runs` por ventana de 24 h y rotación de patches (`PatchRotation`, `PatchesSkipped`). Los
+  bajos (B-1 a B-8) más la seguridad opcional (M-1, B-7) quedan para el spec 16 (`Construction.md`
+  §7, pendiente de `/spec`).
 - **Spec 10 (auto-versionado del `MonitorWorkflow`) diferido**, no descartado: la prioridad es
   probar el monitor contra un segundo proyecto real. Ver `Construction.md` §7 ítem 10 y §8.
 - Límites conocidos para reusarlo en otros proyectos: `specs/09-multi-target-e2e-validation.md`,
@@ -105,7 +111,7 @@ excepción) de que el monitor se va a observar a sí mismo.
 
 ```powershell
 dotnet build PatchMonitor.sln
-dotnet test  PatchMonitor.sln        # 306 tests, sin Docker
+dotnet test  PatchMonitor.sln        # 344 tests, sin Docker
 
 # stack del monitor, desde docker/
 docker compose build
@@ -120,8 +126,8 @@ Puertos del host: API `5100`, dashboard `5101`. Por default el monitor no levant
 propio — apunta al cluster existente en `host.docker.internal:7233` (spec 12). Solo con
 `docker compose --profile standalone up -d` se agregan Temporal `7234`, UI `8234` y Postgres
 `5433` (corridos para convivir con un proyecto en 7233/8233/5432). `EnsureScheduleAsync` es
-create-if-absent: si cambiás la configuración del Schedule, hacé `docker compose down -v` para que
-se recree.
+create-or-update (spec 15): si cambiás la configuración del Schedule, reiniciá el worker y se
+actualiza solo, sin `docker compose down -v`.
 
 Los tests de time-skipping descargan el test-server de Temporal la primera vez (queda cacheado).
 Hay flakies conocidos bajo carga paralela del entorno de time-skipping — vistos en

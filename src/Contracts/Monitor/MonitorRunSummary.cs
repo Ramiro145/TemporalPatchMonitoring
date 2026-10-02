@@ -6,7 +6,8 @@ namespace Contracts.Monitor;
 /// cuenta los patches cuyo <c>Revision</c> (spec 05) avanzó durante esta pasada, es decir, cuyo
 /// veredicto cambió; <see cref="NotificationsSent"/> y <see cref="NotificationsFailed"/> (spec
 /// 07) cuentan cuántos de esos cambios lograron o no notificarse, sin que un fallo de
-/// notificación baje <see cref="PatchesAssessed"/>.
+/// notificación baje <see cref="PatchesAssessed"/>. <see cref="PatchesSkipped"/> (spec 15) cuenta
+/// los descubiertos que el tope <c>MaxPatchesPerRun</c> dejó fuera de esta pasada; rotan a otra.
 /// </summary>
 public sealed record MonitorRunSummary(
     DateTimeOffset StartedAt,
@@ -17,4 +18,5 @@ public sealed record MonitorRunSummary(
     int OverridesLoaded,
     IReadOnlyList<string> Errors,
     int NotificationsSent,
-    int NotificationsFailed);
+    int NotificationsFailed,
+    int PatchesSkipped = 0);

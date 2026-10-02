@@ -36,6 +36,11 @@ public class MonitorWorkflow : IMonitorWorkflow
             .ConfigureAwait(true);
         var startedAt = Workflow.UtcNow;
 
+        // Número de tick derivado del reloj del workflow (determinístico): rota qué patches
+        // entran cuando hay más descubiertos que MaxPatchesPerRun (spec 15, M-9).
+        var intervalMs = Math.Max(1, config.IntervalMinutes) * 60_000L;
+        var tickIndex = new DateTimeOffset(startedAt).ToUnixTimeMilliseconds() / intervalMs;
+
         var overridesLoaded = await Workflow
             .ExecuteActivityAsync((PatchStateActivities a) => a.LoadPhaseOverridesAsync(), Options)
             .ConfigureAwait(true);
@@ -50,7 +55,10 @@ public class MonitorWorkflow : IMonitorWorkflow
         var notificationsFailed = 0;
         var errors = new List<string>();
 
-        foreach (var patch in discovered.Take(config.MaxPatchesPerRun))
+        var selected = PatchRotation.Select(discovered, config.MaxPatchesPerRun, tickIndex);
+        var patchesSkipped = discovered.Count - selected.Count;
+
+        foreach (var patch in selected)
         {
             try
             {
@@ -132,6 +140,7 @@ public class MonitorWorkflow : IMonitorWorkflow
             overridesLoaded,
             errors,
             notificationsSent,
-            notificationsFailed);
+            notificationsFailed,
+            patchesSkipped);
     }
 }

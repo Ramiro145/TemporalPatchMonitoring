@@ -1,6 +1,6 @@
 # 15 - Correcciones de severidad media de la auditoría
 
-**Estado:** Aprobado
+**Estado:** Implementado
 **Depende de:** [03-patch-discovery-two-tier.md](03-patch-discovery-two-tier.md), [04-current-phase-resolution.md](04-current-phase-resolution.md), [06-monitor-workflow-temporal-schedule.md](06-monitor-workflow-temporal-schedule.md), [08-control-api.md](08-control-api.md), [12-single-cluster-namespace-isolation.md](12-single-cluster-namespace-isolation.md), [13-per-patch-absent-attribution.md](13-per-patch-absent-attribution.md), [14-audit-high-severity-fixes.md](14-audit-high-severity-fixes.md)
 **Fecha:** 2026-10-02
 
@@ -185,24 +185,24 @@ Cada paso deja `dotnet build` sin errores y `dotnet test` en verde.
 
 ## Criterios de aceptación
 
-- [ ] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
-- [ ] `dotnet test PatchMonitor.sln` pasa en verde sin Docker.
-- [ ] `npm run build` en `web/` pasa.
-- [ ] `TemporalClient.ConnectAsync` ya no aparece en `WorkflowStarter.cs` (grep).
-- [ ] `Lazy<Task<ITemporalClient>>` no aparece en `src/` (grep).
-- [ ] `ResettableAsyncLazy` reintenta tras un fallo y cachea un éxito (tests).
-- [ ] `ScheduleBootstrapper.Differs` detecta cambios de intervalo y de catchup (tests).
-- [ ] Al reiniciar el worker con otro `MONITOR_INTERVAL_MINUTES`, `GET /schedule` muestra el
+- [x] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
+- [x] `dotnet test PatchMonitor.sln` pasa en verde sin Docker.
+- [x] `npm run build` en `web/` pasa.
+- [x] `TemporalClient.ConnectAsync` ya no aparece en `WorkflowStarter.cs` (grep).
+- [x] `Lazy<Task<ITemporalClient>>` no aparece en `src/` (grep).
+- [x] `ResettableAsyncLazy` reintenta tras un fallo y cachea un éxito (tests).
+- [x] `ScheduleBootstrapper.Differs` detecta cambios de intervalo y de catchup (tests).
+- [x] Al reiniciar el worker con otro `MONITOR_INTERVAL_MINUTES`, `GET /schedule` muestra el
       intervalo nuevo sin `down -v` (verificación manual).
-- [ ] Con el cluster apagado, `docker compose up -d` deja worker y API reiniciándose, y quedan
+- [x] Con el cluster apagado, `docker compose up -d` deja worker y API reiniciándose, y quedan
       arriba al levantar el cluster (verificación manual).
-- [ ] Un patch `Clean` cuya `p` baja por la ventana sigue `Clean` (test); un marker nuevo lo saca
+- [x] Un patch `Clean` cuya `p` baja por la ventana sigue `Clean` (test); un marker nuevo lo saca
       (test).
-- [ ] `DiscoveryOptions.FromEnvironment()` sin variables da `MaxHistories == MaxExecutions == 500`
+- [x] `DiscoveryOptions.FromEnvironment()` sin variables da `MaxHistories == MaxExecutions == 500`
       (test).
-- [ ] `PatchRotation` cubre todos los patches en `ceil(count / max)` ticks consecutivos (test).
-- [ ] `MonitorRunSummary.PatchesSkipped` refleja los no evaluados por tope (test).
-- [ ] `README.md` ya no recomienda `docker compose down -v` para recrear el Schedule.
+- [x] `PatchRotation` cubre todos los patches en `ceil(count / max)` ticks consecutivos (test).
+- [x] `MonitorRunSummary.PatchesSkipped` refleja los no evaluados por tope (test).
+- [x] `README.md` ya no recomienda `docker compose down -v` para recrear el Schedule.
 
 ## Decisiones
 

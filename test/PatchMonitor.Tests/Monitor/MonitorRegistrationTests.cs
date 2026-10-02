@@ -33,5 +33,7 @@ public class MonitorRegistrationTests
         Assert.Equal(provider.GetRequiredService<MonitorOptions>().MaxPatchesPerRun, config.MaxPatchesPerRun);
         Assert.Equal(provider.GetRequiredService<NotificationOptions>().Enabled, config.NotificationsEnabled);
         Assert.Equal(provider.GetRequiredService<NotificationOptions>().MaxAttempts, config.NotifierMaxAttempts);
+        Assert.Equal(
+            (int)provider.GetRequiredService<MonitorOptions>().Interval.TotalMinutes, config.IntervalMinutes);
     }
 }

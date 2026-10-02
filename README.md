@@ -92,8 +92,12 @@ máquina que un proyecto que ya use 7233/8233/5432. Con el perfil `standalone`, 
 es el único cluster disponible, el monitor termina observándose a sí mismo (namespace `monitor`
 en vez de `default`) — la guarda de arranque lo advierte en el log, sin bloquear.
 
-Al arrancar, el worker crea el Schedule `patch-monitor-schedule` (idempotente) y desde ahí corre
-una pasada cada 5 minutos. Para comprobar que está vivo:
+Al arrancar, el worker crea el Schedule `patch-monitor-schedule` si no existe, o lo **actualiza**
+si difiere de la configuración (`MONITOR_INTERVAL_MINUTES`, `MONITOR_CATCHUP_WINDOW_MINUTES`,
+task queue), conservando si estaba pausado. El log dice cuál de los tres casos fue: creado,
+actualizado o ya coincidía. Desde ahí corre una pasada cada 5 minutos. Worker y API tienen
+`restart: unless-stopped`: si el cluster de Temporal no está arriba al arrancar, el proceso
+muere y Docker lo reinicia hasta que responda. Para comprobar que está vivo:
 
 ```powershell
 curl http://localhost:5100/health
@@ -134,8 +138,8 @@ docker compose -f docker-compose.yml -f docker-compose.miproyecto.yml up -d
 
 `host.docker.internal` sirve cuando tu Temporal publica el puerto en la misma máquina (el compose
 base ya trae el `extra_hosts` necesario para ambos servicios). Si está en otro servidor, poné su
-dirección directamente. **Si ya habías levantado el monitor antes**, borrá su volumen
-(`docker compose down -v`) para que el Schedule se recree con la configuración nueva.
+dirección directamente. **Si ya habías levantado el monitor antes**, alcanza con reiniciar el
+worker: actualiza el Schedule existente a la configuración nueva, sin borrar nada.
 
 Antes de confiar en el resultado, dimensioná los topes de descubrimiento al volumen de tu
 namespace: el monitor inspecciona **todos** los workflow types del namespace, no solo los que
@@ -322,14 +326,14 @@ Todas las variables son opcionales; un valor ausente, no numérico o no positivo
 | `TARGET_TEMPORAL_NAMESPACE` | `default` | Namespace observado |
 | `DISCOVERY_LOOKBACK_DAYS` | `7` | Ventana de ejecuciones cerradas a considerar |
 | `DISCOVERY_MAX_EXECUTIONS` | `500` | Tope de ejecuciones listadas por corrida |
-| `DISCOVERY_MAX_HISTORIES` | `200` | Tope de Event Histories leídas por corrida |
+| `DISCOVERY_MAX_HISTORIES` | `500` | Tope de Event Histories leídas por corrida. Mantenelo **≥ `DISCOVERY_MAX_EXECUTIONS`**: las ejecuciones listadas que excedan este tope no se inspeccionan y los patches quedan `Inconclusive`; el worker lo advierte al arrancar |
 | `PHASE_CLEAN_GRACE_HOURS` | `24` | Margen para inferir fase 3 |
 | `PHASE_CLEAN_GRACE_MINUTES` | — | Si está y es positiva, reemplaza a la de horas (pruebas) |
 | `PHASE_CLEAN_CONFIDENCE` | `0.95` | Confianza exigida a la evidencia mínima de Clean (spec 13); valor fuera de `(0, 1)` cae al default |
 | `MONITOR_SCHEDULE_ID` | `patch-monitor-schedule` | Id del Schedule (worker y API deben coincidir) |
 | `MONITOR_INTERVAL_MINUTES` | `5` | Cadencia del Schedule |
 | `MONITOR_CATCHUP_WINDOW_MINUTES` | `10` | Ventana para recuperar ticks perdidos |
-| `MONITOR_MAX_PATCHES_PER_RUN` | `50` | Patches evaluados por pasada |
+| `MONITOR_MAX_PATCHES_PER_RUN` | `50` | Patches evaluados por pasada. Si hay más descubiertos, se ordenan por clave y rotan entre ticks (todos se evalúan en `ceil(descubiertos / tope)` pasadas); los que quedan fuera de una pasada se cuentan en `patchesSkipped` de `GET /runs` |
 | `PATCH_STATE_CAN_THRESHOLD` | `500` | Assessments antes del `Continue-As-New` de un entity; un cambio aplica a cada entity tras su próximo `Continue-As-New` |
 | `PATCH_STATE_HISTORY_LIMIT` | `20` | Cambios que se conservan en el historial de un patch; mismo criterio de aplicación |
 | `NOTIFIER_ENABLED` | `true` | Apaga todas las notificaciones |
@@ -365,7 +369,7 @@ Construction.md  Hoja de ruta, decisiones cerradas y criterio de "listo".
 
 ```powershell
 dotnet build PatchMonitor.sln
-dotnet test  PatchMonitor.sln     # 306 tests, sin Docker
+dotnet test  PatchMonitor.sln     # 344 tests, sin Docker
 ```
 
 La primera corrida de tests descarga el test-server de Temporal (una vez; queda cacheado).
@@ -394,9 +398,18 @@ Cero cambios de código en el monitor para apuntarlo ahí. El procedimiento est�
   (el aislamiento del estado propio es por namespace, no por cluster — spec 12).
 - **Sin migración de datos entre namespaces.** Quien venía corriendo el monitor con estado en el
   namespace `default` propio (antes del spec 12) empieza de cero en `monitor`; mismo criterio que
-  "si cambiás la configuración del Schedule, `docker compose down -v`".
+  "si cambiás la configuración del Schedule, `docker compose down -v`" (hoy ya no hace falta:
+  el worker actualiza el Schedule al arrancar).
 - **El costo escala con el tamaño del namespace**, no con la cantidad de patches: el descubrimiento
-  no filtra por workflow type. Ajustá `DISCOVERY_*` antes de confiar en el resultado.
+  no filtra por workflow type. Ajustá `DISCOVERY_*` antes de confiar en el resultado. Con los
+  defaults (500 ejecuciones y 500 historias por pasada) cada tick puede leer hasta 500 Event
+  Histories del cluster observado.
+- **`Clean` no retrocede sin evidencia nueva.** Cuando las ejecuciones con marker salen de la
+  ventana `DISCOVERY_LOOKBACK_DAYS`, un patch ya en `Clean` (por inferencia) se conserva mientras
+  no aparezca ninguna ejecución con marker posterior al momento en que llegó a `Clean`; una
+  reintroducción real del patch sí lo saca de `Clean`. Un override manual no entra en esta regla.
+- **`GET /runs` mira las últimas 24 horas** (con respaldo a un escaneo por tipo si hay menos corridas
+  que `API_MAX_LIST_RUNS`), así que el panel de últimas corridas muestra siempre las más recientes.
 - **Convención de marker `core_patch`**: la emiten los SDKs basados en sdk-core (como el de .NET).
   Con otro SDK, verificá la convención antes.
 - **Un patch cuyo `Workflow.Patched` vive en una rama de código que la ventana de discovery nunca

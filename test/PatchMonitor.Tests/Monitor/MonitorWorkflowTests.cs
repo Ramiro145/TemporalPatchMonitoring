@@ -67,7 +67,7 @@ public class MonitorWorkflowTests
         options.AddAllActivities(new ConfigActivities(
             new MonitorOptions(
                 MonitorOptions.DefaultScheduleId,
-                TimeSpan.FromMinutes(MonitorOptions.DefaultIntervalMinutes),
+                TimeSpan.FromMinutes(runConfig.IntervalMinutes),
                 TimeSpan.FromMinutes(MonitorOptions.DefaultCatchupWindowMinutes),
                 runConfig.MaxPatchesPerRun,
                 TaskQueues.PatchMonitor),
@@ -153,6 +153,7 @@ public class MonitorWorkflowTests
 
         Assert.Equal(2, summary.PatchesDiscovered);
         Assert.Equal(1, summary.PatchesAssessed);
+        Assert.Equal(1, summary.PatchesSkipped);
     }
 
     [Fact]
