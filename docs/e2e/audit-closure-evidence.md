@@ -33,6 +33,9 @@ El cluster de yardflow no tenía ejecuciones recientes en la ventana de descubri
 Sin regresiones en vivo y suite verde. La auditoría queda cerrada, con **M-1 (token de la API)**
 como límite conocido documentado en el README, por decisión explícita.
 
+> **Actualización 2026-10-05:** M-6 y M-9 se verificaron después en vivo, ver
+> `audit-m6-m9-evidence.md`.
+
 ## Ampliación: A-1 y A-2 en vivo
 
 Worker desechable (`AuditE2EWorkflow`, patch `audit-e2e-v1`, cola `audit-e2e-queue`) más un webhook
