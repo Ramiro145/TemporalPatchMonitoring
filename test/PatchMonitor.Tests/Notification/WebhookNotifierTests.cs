@@ -94,6 +94,43 @@ public class WebhookNotifierTests
         Assert.True(ex.NonRetryable);
     }
 
+    // Handler que nunca responde: espera hasta que se cancele el token que recibe.
+    private sealed class HangingHandler : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        }
+    }
+
+    [Fact]
+    public async Task Timeout_del_webhook_lanza_TimeoutException_reintentable()
+    {
+        var options = Options() with { WebhookTimeout = TimeSpan.FromMilliseconds(50) };
+        var notifier = new WebhookNotifier(new HttpClient(new HangingHandler()), options);
+
+        var ex = await Record.ExceptionAsync(() => notifier.NotifyAsync(Notification));
+
+        var timeout = Assert.IsType<TimeoutException>(ex);
+        Assert.IsAssignableFrom<OperationCanceledException>(timeout.InnerException);
+        Assert.IsNotType<ApplicationFailureException>(ex);
+    }
+
+    [Fact]
+    public async Task Ct_del_llamador_cancelado_propaga_OperationCanceledException()
+    {
+        var notifier = new WebhookNotifier(new HttpClient(new HangingHandler()), Options());
+        using var cts = new CancellationTokenSource();
+        cts.CancelAfter(TimeSpan.FromMilliseconds(50));
+
+        var ex = await Record.ExceptionAsync(() => notifier.NotifyAsync(Notification, cts.Token));
+
+        Assert.IsAssignableFrom<OperationCanceledException>(ex);
+        Assert.IsNotType<TimeoutException>(ex);
+    }
+
     [Fact]
     public async Task Status_429_lanza_excepcion_reintentable_no_ApplicationFailureException()
     {

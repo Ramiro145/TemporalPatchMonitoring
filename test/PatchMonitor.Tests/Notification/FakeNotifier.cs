@@ -20,11 +20,19 @@ public sealed class FakeNotifier : INotifier
     /// <summary>Si <c>true</c>, <see cref="NotifyAsync"/> tira; se puede cambiar entre pasadas.</summary>
     public bool Fails { get; set; }
 
+    /// <summary>Si no es <c>null</c>, <see cref="NotifyAsync"/> lanza esta excepción en vez de la genérica.</summary>
+    public Exception? Throws { get; set; }
+
     public List<VerdictChangeNotification> Calls { get; } = new();
 
     public Task NotifyAsync(VerdictChangeNotification notification, CancellationToken ct = default)
     {
         Calls.Add(notification);
+        if (Throws is not null)
+        {
+            throw Throws;
+        }
+
         if (Fails)
         {
             throw new InvalidOperationException($"fallo simulado de {Name}");

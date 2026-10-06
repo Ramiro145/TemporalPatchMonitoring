@@ -28,7 +28,9 @@ public sealed class WebhookNotifier : INotifier
     /// <c>2xx</c> ⇒ éxito. <c>4xx</c> salvo <c>408</c>/<c>429</c> ⇒ el destino rechazó el
     /// payload de forma permanente, <see cref="ApplicationFailureException"/> no reintentable.
     /// Cualquier otro caso (<c>5xx</c>, <c>408</c>, <c>429</c>, timeout, error de red) ⇒
-    /// excepción normal, que la <c>RetryPolicy</c> de la Activity reintenta.
+    /// excepción normal, que la <c>RetryPolicy</c> de la Activity reintenta. El timeout propio
+    /// (<see cref="NotificationOptions.WebhookTimeout"/>) sale como <see cref="TimeoutException"/>;
+    /// solo la cancelación del <c>ct</c> del llamador propaga como <see cref="OperationCanceledException"/>.
     /// </summary>
     public async Task NotifyAsync(VerdictChangeNotification notification, CancellationToken ct = default)
     {
@@ -51,7 +53,21 @@ public sealed class WebhookNotifier : INotifier
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(_options.WebhookTimeout);
 
-        using var response = await _http.SendAsync(request, cts.Token).ConfigureAwait(false);
+        HttpResponseMessage response;
+        try
+        {
+            response = await _http.SendAsync(request, cts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            // Venció WebhookTimeout (o el timeout propio del HttpClient), no el ct del llamador:
+            // se vuelve una excepción reintentable en vez de una cancelación que cortaría el
+            // fan-out del CompositeNotifier (spec 18).
+            throw new TimeoutException(
+                $"El webhook no respondió dentro de {_options.WebhookTimeout.TotalSeconds:0.##} s.", ex);
+        }
+
+        using var _ = response;
 
         if (response.IsSuccessStatusCode)
         {

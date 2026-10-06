@@ -1,6 +1,7 @@
 using Contracts.Domain;
 using Contracts.Notification;
 using PatchMonitor.Services;
+using Temporalio.Exceptions;
 using Xunit;
 
 namespace PatchMonitor.Tests.Notification;
@@ -64,6 +65,86 @@ public class CompositeNotifierTests
 
         Assert.Single(first.Calls);
         Assert.Single(second.Calls);
+    }
+
+    // ── Spec 18: clasificación del error y fan-out ante timeouts ───────────────
+
+    private static ApplicationFailureException Rejected(string message) =>
+        new(message, errorType: "WebhookRejected", nonRetryable: true);
+
+    [Fact]
+    public async Task Si_todos_los_fallos_son_no_reintentables_lanza_ApplicationFailureException_no_reintentable()
+    {
+        var first = new FakeNotifier("first") { Throws = Rejected("rechazo A") };
+        var second = new FakeNotifier("second") { Throws = Rejected("rechazo B") };
+        var composite = new CompositeNotifier(new INotifier[] { first, second });
+
+        var ex = await Assert.ThrowsAsync<ApplicationFailureException>(
+            () => composite.NotifyAsync(Notification));
+
+        Assert.True(ex.NonRetryable);
+        Assert.Equal("NotificationRejected", ex.ErrorType);
+        Assert.Contains("first: rechazo A", ex.Message);
+        Assert.Contains("second: rechazo B", ex.Message);
+    }
+
+    [Fact]
+    public async Task Un_solo_notificador_no_reintentable_lanza_no_reintentable()
+    {
+        var composite = new CompositeNotifier(new INotifier[]
+        {
+            new FakeNotifier("ok"),
+            new FakeNotifier("webhook") { Throws = Rejected("400") },
+        });
+
+        var ex = await Assert.ThrowsAsync<ApplicationFailureException>(
+            () => composite.NotifyAsync(Notification));
+
+        Assert.True(ex.NonRetryable);
+    }
+
+    [Fact]
+    public async Task Un_fallo_no_reintentable_mas_uno_reintentable_lanza_reintentable()
+    {
+        var rejected = new FakeNotifier("rejected") { Throws = Rejected("400") };
+        var transient = new FakeNotifier("transient", fails: true);
+        var composite = new CompositeNotifier(new INotifier[] { rejected, transient });
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => composite.NotifyAsync(Notification));
+
+        Assert.Contains("rejected", ex.Message);
+        Assert.Contains("transient", ex.Message);
+    }
+
+    [Fact]
+    public async Task Un_timeout_de_un_destino_no_corta_el_fan_out()
+    {
+        var timedOut = new FakeNotifier("slow") { Throws = new TaskCanceledException("timeout simulado") };
+        var ok = new FakeNotifier("ok");
+        var composite = new CompositeNotifier(new INotifier[] { timedOut, ok });
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => composite.NotifyAsync(Notification));
+
+        Assert.Contains("slow", ex.Message);
+        Assert.Single(timedOut.Calls);
+        Assert.Single(ok.Calls);
+    }
+
+    [Fact]
+    public async Task Con_el_ct_cancelado_propaga_OperationCanceledException_y_no_sigue()
+    {
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        var cancelled = new FakeNotifier("first") { Throws = new OperationCanceledException(cts.Token) };
+        var next = new FakeNotifier("next");
+        var composite = new CompositeNotifier(new INotifier[] { cancelled, next });
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => composite.NotifyAsync(Notification, cts.Token));
+
+        Assert.Empty(next.Calls);
     }
 
     [Fact]
