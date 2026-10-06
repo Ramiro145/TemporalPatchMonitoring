@@ -18,7 +18,15 @@ namespace PatchMonitor.Workflows;
 /// <c>Continue-As-New</c>: el estado que sobrevive entre pasadas vive en los entity workflows
 /// del spec 05.
 /// </summary>
-[Workflow]
+/// <remarks>
+/// Spec 18: el no-determinismo hace <b>fallar</b> la corrida en vez de suspenderla por task failure.
+/// Con <c>Overlap = Skip</c>, una corrida en vuelo durante un deploy que no reproduce su historia
+/// quedaba abierta reintentando para siempre y el Schedule saltaba todos los ticks siguientes; así
+/// falla al instante y el tick siguiente corre. Es metadata de la definición, no código de
+/// workflow: no exige <c>Workflow.Patched</c>. Solo aplica acá: las entities nunca cierran y
+/// perderían su estado si fallaran.
+/// </remarks>
+[Workflow(FailureExceptionTypes = new[] { typeof(WorkflowNondeterminismException) })]
 public class MonitorWorkflow : IMonitorWorkflow
 {
     private static readonly ActivityOptions Options = new()
