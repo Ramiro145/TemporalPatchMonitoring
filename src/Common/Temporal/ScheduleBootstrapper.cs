@@ -33,10 +33,18 @@ namespace Common
                 CatchupWindow = options.CatchupWindow,
             };
 
+        /// <summary>
+        /// La acción del Schedule. Fija <c>ExecutionTimeout</c> = <see cref="MonitorOptions.RunTimeout"/>
+        /// (spec 18): con <c>Overlap = Skip</c>, una corrida que queda abierta para siempre haría que
+        /// el Schedule salte todos los ticks siguientes; con el tope se cierra sola.
+        /// </summary>
         public static ScheduleActionStartWorkflow BuildAction(MonitorOptions options) =>
             ScheduleActionStartWorkflow.Create(
                 (IMonitorWorkflow wf) => wf.RunAsync(),
-                new WorkflowOptions(RunWorkflowIdPrefix, options.TaskQueue));
+                new WorkflowOptions(RunWorkflowIdPrefix, options.TaskQueue)
+                {
+                    ExecutionTimeout = options.RunTimeout,
+                });
 
         /// <summary>
         /// Deja el Schedule como lo describe <paramref name="options"/> (spec 15, M-3): lo crea si
@@ -80,8 +88,10 @@ namespace Common
 
         /// <summary>
         /// Pura y sin cluster: <c>true</c> si el Schedule vigente se aparta de lo que gobierna
-        /// <paramref name="desired"/> — intervalo, <c>CatchupWindow</c>, <c>Overlap</c>, task queue
-        /// y workflow type de la acción. No compara el estado (pausa y nota).
+        /// <paramref name="desired"/> — intervalo, <c>CatchupWindow</c>, <c>Overlap</c>, task queue,
+        /// workflow type y <c>ExecutionTimeout</c> de la acción. Un Schedule creado antes del spec 18
+        /// no lo tiene (<c>null</c>), así que difiere y se actualiza solo. No compara el estado
+        /// (pausa y nota).
         /// </summary>
         public static bool Differs(Schedule current, MonitorOptions desired)
         {
@@ -104,7 +114,8 @@ namespace Common
 
             var expected = BuildAction(desired);
             return action.Workflow != expected.Workflow ||
-                   action.Options.TaskQueue != desired.TaskQueue;
+                   action.Options.TaskQueue != desired.TaskQueue ||
+                   action.Options.ExecutionTimeout != desired.RunTimeout;
         }
     }
 

@@ -59,6 +59,16 @@ public class ScheduleBootstrapperTests
         Assert.Equal(ScheduleBootstrapper.RunWorkflowIdPrefix, action.Options.Id);
     }
 
+    [Fact]
+    public void BuildAction_lleva_el_ExecutionTimeout_igual_al_RunTimeout()
+    {
+        Assert.Equal(TimeSpan.FromMinutes(15), ScheduleBootstrapper.BuildAction(DefaultOptions).Options.ExecutionTimeout);
+
+        var custom = DefaultOptions with { RunTimeout = TimeSpan.FromMinutes(40) };
+
+        Assert.Equal(TimeSpan.FromMinutes(40), ScheduleBootstrapper.BuildAction(custom).Options.ExecutionTimeout);
+    }
+
     // Schedule tal como lo dejaría EnsureScheduleAsync al crearlo con `options` (spec 15, M-3).
     private static Schedule ScheduleFor(MonitorOptions options) =>
         new(ScheduleBootstrapper.BuildAction(options), ScheduleBootstrapper.BuildSpec(options))
@@ -97,6 +107,29 @@ public class ScheduleBootstrapperTests
         var desired = DefaultOptions with { TaskQueue = "otra-task-queue" };
 
         Assert.True(ScheduleBootstrapper.Differs(current, desired));
+    }
+
+    [Fact]
+    public void Differs_es_true_si_cambia_el_RunTimeout()
+    {
+        var current = ScheduleFor(DefaultOptions);
+        var desired = DefaultOptions with { RunTimeout = TimeSpan.FromMinutes(30) };
+
+        Assert.True(ScheduleBootstrapper.Differs(current, desired));
+    }
+
+    [Fact]
+    public void Differs_es_true_si_el_schedule_vigente_no_tiene_ExecutionTimeout()
+    {
+        // Schedule creado antes del spec 18: la acción no fija ExecutionTimeout.
+        var baseline = ScheduleFor(DefaultOptions);
+        var legacyAction = ScheduleActionStartWorkflow.Create(
+            (Contracts.Workflows.IMonitorWorkflow wf) => wf.RunAsync(),
+            new Temporalio.Client.WorkflowOptions(
+                ScheduleBootstrapper.RunWorkflowIdPrefix, DefaultOptions.TaskQueue));
+        var current = baseline with { Action = legacyAction };
+
+        Assert.True(ScheduleBootstrapper.Differs(current, DefaultOptions));
     }
 
     [Fact]
