@@ -95,7 +95,9 @@ en vez de `default`) — la guarda de arranque lo advierte en el log, sin bloque
 Al arrancar, el worker crea el Schedule `patch-monitor-schedule` si no existe, o lo **actualiza**
 si difiere de la configuración (`MONITOR_INTERVAL_MINUTES`, `MONITOR_CATCHUP_WINDOW_MINUTES`,
 task queue), conservando si estaba pausado. El log dice cuál de los tres casos fue: creado,
-actualizado o ya coincidía. Desde ahí corre una pasada cada 5 minutos. Worker y API tienen
+actualizado o ya coincidía. Cada corrida tiene un tope de ejecución (`MONITOR_RUN_TIMEOUT_MINUTES`,
+15 min por defecto): si una queda colgada, el Schedule la corta y vuelve a correr. Desde ahí corre una
+pasada cada 5 minutos. Worker y API tienen
 `restart: unless-stopped`: si el cluster de Temporal no está arriba al arrancar, el proceso
 muere y Docker lo reinicia hasta que responda. Para comprobar que está vivo:
 
@@ -223,7 +225,10 @@ worker; si `NOTIFIER_WEBHOOK_URL` está definida, además se hace `POST` del mis
   después, solo si el envío salió bien. Si falla cualquier destino (por ejemplo el webhook), la
   revisión queda pendiente y se reintenta: dentro de la pasada hasta `NOTIFIER_MAX_ATTEMPTS`, y en
   cada tick siguiente mientras siga pendiente. El fallo aparece en `errors` y `notificationsFailed`
-  de la corrida (`GET /runs`).
+  de la corrida (`GET /runs`). Un rechazo permanente del webhook (`4xx`, salvo `408` y `429`) no se
+  reintenta dentro de la pasada —un solo intento—, pero la revisión sigue pendiente y el tick
+  siguiente lo intenta una vez más. Un timeout del webhook sí se reintenta, y si un destino falla de
+  forma reintentable el aviso se reintenta aunque otro lo haya rechazado.
 - **Se avisa el estado vigente, no cada revisión intermedia.** Si un patch cambió varias veces
   mientras el webhook estaba caído, al recuperarse llega un solo aviso con el estado actual.
 - **Ráfaga única al habilitar.** Si las notificaciones estaban deshabilitadas
@@ -345,6 +350,7 @@ Todas las variables son opcionales; un valor ausente, no numérico o no positivo
 | `MONITOR_SCHEDULE_ID` | `patch-monitor-schedule` | Id del Schedule (worker y API deben coincidir) |
 | `MONITOR_INTERVAL_MINUTES` | `5` | Cadencia del Schedule |
 | `MONITOR_CATCHUP_WINDOW_MINUTES` | `10` | Ventana para recuperar ticks perdidos |
+| `MONITOR_RUN_TIMEOUT_MINUTES` | `15` | Tope de ejecución de cada corrida: una que lo supera se corta (`TimedOut`) y el Schedule sigue. Cambiarlo actualiza el Schedule al reiniciar el worker |
 | `MONITOR_MAX_PATCHES_PER_RUN` | `50` | Patches evaluados por pasada. Si hay más descubiertos, se ordenan por clave y rotan entre ticks (todos se evalúan en `ceil(descubiertos / tope)` pasadas); los que quedan fuera de una pasada se cuentan en `patchesSkipped` de `GET /runs` |
 | `PATCH_STATE_CAN_THRESHOLD` | `500` | Assessments antes del `Continue-As-New` de un entity; un cambio aplica a cada entity tras su próximo `Continue-As-New` |
 | `PATCH_STATE_HISTORY_LIMIT` | `20` | Cambios que se conservan en el historial de un patch; mismo criterio de aplicación |
@@ -421,6 +427,13 @@ Cero cambios de código en el monitor para apuntarlo ahí. El procedimiento est�
   ventana `DISCOVERY_LOOKBACK_DAYS`, un patch ya en `Clean` (por inferencia) se conserva mientras
   no aparezca ninguna ejecución con marker posterior al momento en que llegó a `Clean`; una
   reintroducción real del patch sí lo saca de `Clean`. Un override manual no entra en esta regla.
+  Si hay ejecuciones posteriores a ese momento que no se pudieron leer (`Unknown`), el patch pasa a
+  `Unknown` en vez de conservar `Clean` sin evidencia (spec 18).
+- **Una corrida con replay roto falla, no se cuelga.** Si un deploy cambia `MonitorWorkflow` con una
+  corrida en vuelo, esa corrida termina `Failed` (`[TMPRL1100]`) y el tick siguiente corre normal. Las
+  corridas que ya estuvieran colgadas antes de actualizar al spec 18 no heredan el tope de 15 min:
+  terminarlas una vez a mano (`temporal workflow terminate`). Los entity workflows no fallan ante el
+  no-determinismo a propósito: quedan suspendidos hasta un deploy corregido, sin perder estado.
 - **`GET /runs` mira las últimas 24 horas** (con respaldo a un escaneo por tipo si hay menos corridas
   que `API_MAX_LIST_RUNS`), así que el panel de últimas corridas muestra siempre las más recientes.
 - **Convención de marker `core_patch`**: la emiten los SDKs basados en sdk-core (como el de .NET).

@@ -30,7 +30,7 @@ cambios de arquitectura.
 
 ## Estado actual
 
-- Specs **01 a 09, 11, 12 y 13 implementados** (más los 14 a 17 de la auditoría, abajo) (`specs/`). El spec 09 validó el monitor end-to-end
+- Specs **01 a 09, 11, 12 y 13 implementados** (más los 14 a 18 de la auditoría, abajo) (`specs/`). El spec 09 validó el monitor end-to-end
   contra el `ReleaseOrderDemo` real (evidencia en `docs/e2e/evidence/`). El spec 11 agregó el
   dashboard web (`web/`, ver `## Frontend` más abajo). El spec 12 movió el monitor a apoyarse en un
   cluster de Temporal existente, aislado por namespace (`monitor` propio / `default` observado) en
@@ -59,6 +59,12 @@ cambios de arquitectura.
   `FromEnvironment()` en workflows, migración automática de entities antiguas
   (`MigrateOptionsAsync` / `HasRecordedOptions`), `QueryFailureGuard` (fallo rápido ante un replay
   roto) y `503` con el motivo en `GET /patches/{...}`. Evidencia en `docs/e2e/spec-17-evidence.md`.
+- **Spec 18** (huecos de la revisión del cierre de la auditoría): `MonitorWorkflow` falla ante el
+  no-determinismo (`FailureExceptionTypes`) y la acción del Schedule lleva `ExecutionTimeout`
+  (`MONITOR_RUN_TIMEOUT_MINUTES`, 15), así que una corrida con replay roto ya no bloquea los ticks; el
+  `CompositeNotifier` conserva el no-reintentable (`NotificationRejected`) si todos los fallos lo son y
+  un timeout de un destino no corta el fan-out; `Clean` no se conserva con ejecuciones `Unknown`
+  posteriores. Evidencia en `docs/e2e/spec-18-evidence.md`.
 - **Spec 10 (auto-versionado del `MonitorWorkflow`) diferido**, no descartado: la prioridad es
   probar el monitor contra un segundo proyecto real. Ver `Construction.md` §7 ítem 10 y §8.
 - Límites conocidos para reusarlo en otros proyectos: `specs/09-multi-target-e2e-validation.md`,
@@ -116,7 +122,11 @@ excepción) de que el monitor se va a observar a sí mismo.
 - Una query que falla por replay roto (`WorkflowQueryFailedException`) no se reintenta
   (`QueryFailureGuard`) y `GET /patches/{...}` la devuelve como `503` con el motivo (spec 17).
 - La notificación reclama la revisión **después** de un envío exitoso, nunca antes; el notificador
-  compuesto falla si falla cualquier destino.
+  compuesto falla si falla cualquier destino y es no reintentable solo si todos los fallos lo son
+  (spec 18).
+- Una corrida de `MonitorWorkflow` con replay roto **falla** (`FailureExceptionTypes`) en vez de
+  colgarse, y `ExecutionTimeout` en el Schedule es la red de seguridad. No extender el no-determinismo
+  como fallo a las entities: nunca cierran y perderían su estado.
 - Cualquier cambio al código de `PatchStateWorkflow` o `PatchRegistryWorkflow` con ejecuciones
   vivas exige `Workflow.Patched` (nunca cierran). Es la razón de ser del spec 10.
 
@@ -124,7 +134,7 @@ excepción) de que el monitor se va a observar a sí mismo.
 
 ```powershell
 dotnet build PatchMonitor.sln
-dotnet test  PatchMonitor.sln        # 375 tests, sin Docker
+dotnet test  PatchMonitor.sln        # 395 tests, sin Docker
 
 # stack del monitor, desde docker/
 docker compose build

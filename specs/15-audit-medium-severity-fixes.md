@@ -237,7 +237,7 @@ Cada paso deja `dotnet build` sin errores y `dotnet test` en verde.
 | `Clean` conservado oculta una regresión real sin marker nuevo | Solo pasa sin ejecuciones con marker nuevas; una reintroducción siempre trae marker |
 | `UpdateAsync` pisa un cambio manual del Schedule hecho en la UI | Solo se comparan los campos que gobierna `MonitorOptions`; documentado |
 | Reinicio en bucle con el cluster caído llena los logs | Esperado y visible; se corta al volver el cluster |
-| Corrida de `MonitorWorkflow` en vuelo durante el deploy con firmas nuevas | Falla ese tick; el siguiente la reemplaza (igual que en el spec 14) |
+| Corrida de `MonitorWorkflow` en vuelo durante el deploy con firmas nuevas | ~~Falla ese tick; el siguiente la reemplaza~~ **Corregido en el spec 18:** falla al instante o se corta a los 15 min, ver la nota del spec 14 |
 | Ventana de 24 h vacía con el Schedule pausado | Fallback al escaneo por `WorkflowType` |
 
 ## Qué **no** está en este spec

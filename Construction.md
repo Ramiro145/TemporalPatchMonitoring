@@ -184,6 +184,7 @@ Derivada de las 6 specs de `ReleaseOrderDemo`. Cada `/spec` que se cree debe res
 | 15 | `audit-medium-severity-fixes` | Hallazgos medios de la auditoría (M-2 a M-9): conexiones y reconexión, actualización del Schedule, `restart` del worker, `Clean` que no retrocede sin evidencia nueva, topes de descubrimiento coherentes, `/runs` y rotación estable de patches | 14 |
 | 16 | `audit-low-severity-fixes` | Hallazgos bajos de la auditoría (B-1 a B-8) y el recorte de `patchId` en el Tier 1; contenedores no-root. El token de la API (M-1) quedó fuera y sin spec | 14, 15 |
 | 17 | `legacy-entity-options-migration` | Cierra el hueco que el spec 14 dejó en A-3: los workflows no leen el entorno ni siquiera en entities antiguas (migración automática de opciones), una query con replay roto falla rápido y `GET /patches/{...}` devuelve `503` con el motivo | 05, 14, 15, 16 |
+| 18 | `audit-review-followup-fixes` | Huecos de la revisión del cierre de la auditoría: una corrida con replay roto falla o se corta a los 15 min en vez de bloquear el Schedule, el notificador compuesto conserva el 4xx no reintentable y tolera timeouts, y `Clean` no se conserva con ejecuciones sin leer | 06, 07, 14, 15, 17 |
 
 ### Por qué van en ese orden
 

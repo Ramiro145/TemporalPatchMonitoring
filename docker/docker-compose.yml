@@ -100,6 +100,8 @@ services:
       - MONITOR_INTERVAL_MINUTES=5
       - MONITOR_CATCHUP_WINDOW_MINUTES=10
       - MONITOR_MAX_PATCHES_PER_RUN=50
+      # Tope de ejecución de cada corrida del Schedule (spec 18).
+      - MONITOR_RUN_TIMEOUT_MINUTES=15
       # Notificador pluggable (spec 07): log siempre, webhook si NOTIFIER_WEBHOOK_URL está seteada.
       - NOTIFIER_ENABLED=true
       - NOTIFIER_WEBHOOK_URL=

@@ -160,6 +160,9 @@ Cada paso deja el sistema compilando y con `dotnet test` en verde.
   ejecución viva podría fallar con `NonDeterminismError`.
 - **No:** `Workflow.Patched` en `MonitorWorkflow`. Las corridas duran segundos y el drenaje es de
   30 s; a lo sumo falla un tick y el siguiente lo reemplaza.
+  **Corrección (spec 18):** esa frase era falsa. Con `Overlap = Skip` y sin tope de ejecución, una
+  corrida con replay roto no falla: reintenta sin fin y bloquea los ticks siguientes. El spec 18 hace
+  fallar el no-determinismo en `MonitorWorkflow` y le pone `ExecutionTimeout` al Schedule.
 - **Sí:** `ContinuedAsNew` fuera de `IsOpen()`, coherente con la restricción #3 de `Construction.md`.
 
 ## Riesgos identificados
@@ -169,7 +172,7 @@ Cada paso deja el sistema compilando y con `dotnet test` en verde.
 | Ráfaga de avisos al habilitar notificaciones con entities atrasados | Un aviso por patch (estado vigente); documentado en README |
 | Duplicado si el envío sale bien y el claim falla | At-least-once aceptado y documentado |
 | Webhook caído de forma permanente reintenta en cada tick | Queda en `errors` y `notificationsFailed` del run; visible en `/runs` |
-| Corrida de `MonitorWorkflow` en vuelo durante el deploy | Falla ese tick; el siguiente la reemplaza |
+| Corrida de `MonitorWorkflow` en vuelo durante el deploy | ~~Falla ese tick; el siguiente la reemplaza~~ **Corregido en el spec 18:** la corrida quedaba abierta y el Schedule saltaba todos los ticks; ahora falla al instante (`FailureExceptionTypes`) o se corta a los 15 min (`ExecutionTimeout`) |
 | Tests existentes que asumían `ContinuedAsNew` abierta | Se ajustan en el paso 2 |
 
 ## Qué **no** está en este spec

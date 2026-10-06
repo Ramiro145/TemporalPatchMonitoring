@@ -166,7 +166,7 @@ Cada paso deja `dotnet build` sin errores y `dotnet test` en verde.
 | Worker y API con `PATCH_STATE_*` distintos migran con el valor de quien llegue primero | Documentado; el valor queda fijo en la entity tras su primer Continue-As-New |
 | Una run antigua sin migrar crece sin Continue-As-New | Se migra en el primer assessment tras el deploy |
 | Una query extra por entity al arrancar cada proceso | Una por entity por vida del proceso |
-| Corrida de `MonitorWorkflow` en vuelo durante el deploy | Falla ese tick; el siguiente la reemplaza (igual que en los specs 14 y 15) |
+| Corrida de `MonitorWorkflow` en vuelo durante el deploy | ~~Falla ese tick; el siguiente la reemplaza~~ **Corregido en el spec 18:** falla al instante o se corta a los 15 min, ver la nota del spec 14 |
 
 ## Qué **no** está en este spec
 

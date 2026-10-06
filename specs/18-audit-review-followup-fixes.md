@@ -1,6 +1,6 @@
 # 18 - Huecos de la revisión del cierre de la auditoría
 
-**Estado:** Aprobado
+**Estado:** Implementado
 **Depende de:** [06-monitor-workflow-temporal-schedule.md](06-monitor-workflow-temporal-schedule.md), [07-pluggable-notifier.md](07-pluggable-notifier.md), [14-audit-high-severity-fixes.md](14-audit-high-severity-fixes.md), [15-audit-medium-severity-fixes.md](15-audit-medium-severity-fixes.md), [17-legacy-entity-options-migration.md](17-legacy-entity-options-migration.md)
 **Fecha:** 2026-10-06
 
@@ -169,26 +169,28 @@ Cada paso deja `dotnet build` sin errores y `dotnet test` en verde.
 
 ## Criterios de aceptación
 
-- [ ] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
-- [ ] `dotnet test PatchMonitor.sln` pasa en verde sin Docker.
-- [ ] La definición de `MonitorWorkflow` declara `WorkflowNondeterminismException` como fallo; las de
+- [x] `dotnet build PatchMonitor.sln` compila con 0 errores y 0 advertencias.
+- [x] `dotnet test PatchMonitor.sln` pasa en verde sin Docker (395 de 395).
+- [x] La definición de `MonitorWorkflow` declara `WorkflowNondeterminismException` como fallo; las de
       `PatchStateWorkflow` y `PatchRegistryWorkflow` no (test).
-- [ ] La acción del Schedule lleva `ExecutionTimeout` igual a `MonitorOptions.RunTimeout` y `Differs`
+- [x] La acción del Schedule lleva `ExecutionTimeout` igual a `MonitorOptions.RunTimeout` y `Differs`
       detecta un cambio de ese valor (test).
-- [ ] `MONITOR_RUN_TIMEOUT_MINUTES` ausente, no numérica o no positiva ⇒ 15 min, sin lanzar (test).
-- [ ] Un rechazo 4xx a través de `CompositeNotifier` se intenta una sola vez por tick y no reclama la
+- [x] `MONITOR_RUN_TIMEOUT_MINUTES` ausente, no numérica o no positiva ⇒ 15 min, sin lanzar (test).
+- [x] Un rechazo 4xx a través de `CompositeNotifier` se intenta una sola vez por tick y no reclama la
       revisión (test de workflow).
-- [ ] Fallos mixtos (no reintentable + reintentable) ⇒ reintentable (test).
-- [ ] Un timeout de un destino no impide que los demás reciban la llamada (test).
-- [ ] Previo `Clean` con ejecuciones `Unknown` posteriores a `LastChangedAt` ⇒ `Unknown` con motivo;
+- [x] Fallos mixtos (no reintentable + reintentable) ⇒ reintentable (test).
+- [x] Un timeout de un destino no impide que los demás reciban la llamada (test).
+- [x] Previo `Clean` con ejecuciones `Unknown` posteriores a `LastChangedAt` ⇒ `Unknown` con motivo;
       sin ellas se conserva `Clean` (test).
-- [ ] `src/MonitorApi/Program.cs` ya no afirma que `ConnectAsync` reintenta (lectura).
-- [ ] Las frases "falla ese tick y el siguiente lo reemplaza" de los specs 14, 15 y 17 tienen su nota
+- [x] `src/MonitorApi/Program.cs` ya no afirma que `ConnectAsync` reintenta (lectura).
+- [x] Las frases "falla ese tick y el siguiente lo reemplaza" de los specs 14, 15 y 17 tienen su nota
       de corrección (grep).
-- [ ] En vivo: Schedule actualizado con el timeout, 4xx sin reintento en el tick, timeout sin cortar
+- [x] En vivo: Schedule actualizado con el timeout, 4xx sin reintento en el tick, timeout sin cortar
       el fan-out y corrida no determinística `Failed` con el tick siguiente corriendo (verificación
-      manual, evidencia en `docs/e2e/spec-18-evidence.md`).
-- [ ] `README.md`, `docker-compose.yml`, `CLAUDE.md` y `Construction.md` reflejan el cambio.
+      manual, evidencia en `docs/e2e/spec-18-evidence.md`). *(Verificado el 2026-10-06. El fan-out
+      ante un timeout no se distingue en vivo —el notificador de log va primero—, queda cubierto por
+      los tests; el caso M-6 con ejecuciones `Unknown` solo por tests.)*
+- [x] `README.md`, `docker-compose.yml`, `CLAUDE.md` y `Construction.md` reflejan el cambio.
 
 ## Decisiones
 
