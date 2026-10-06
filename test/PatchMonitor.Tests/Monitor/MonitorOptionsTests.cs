@@ -5,7 +5,7 @@ namespace PatchMonitor.Tests.Monitor;
 
 /// <summary>
 /// <see cref="MonitorOptions.FromEnvironment"/> lee variables de entorno del proceso. Cada test
-/// guarda y restaura las cinco variables para no filtrar estado entre tests ni al entorno de
+/// guarda y restaura las seis variables para no filtrar estado entre tests ni al entorno de
 /// desarrollo. Ningún otro test de esta suite toca estos nombres.
 /// </summary>
 public class MonitorOptionsTests
@@ -17,6 +17,7 @@ public class MonitorOptionsTests
         "MONITOR_CATCHUP_WINDOW_MINUTES",
         "MONITOR_MAX_PATCHES_PER_RUN",
         "MONITOR_TASK_QUEUE",
+        "MONITOR_RUN_TIMEOUT_MINUTES",
     };
 
     private static MonitorOptions WithEnv(IDictionary<string, string?> values)
@@ -51,6 +52,8 @@ public class MonitorOptionsTests
         Assert.Equal(TimeSpan.FromMinutes(MonitorOptions.DefaultCatchupWindowMinutes), options.CatchupWindow);
         Assert.Equal(MonitorOptions.DefaultMaxPatchesPerRun, options.MaxPatchesPerRun);
         Assert.Equal(Contracts.TaskQueues.PatchMonitor, options.TaskQueue);
+        Assert.Equal(TimeSpan.FromMinutes(MonitorOptions.DefaultRunTimeoutMinutes), options.RunTimeout);
+        Assert.Equal(TimeSpan.FromMinutes(15), options.RunTimeout);
     }
 
     [Fact]
@@ -63,6 +66,7 @@ public class MonitorOptionsTests
             ["MONITOR_CATCHUP_WINDOW_MINUTES"] = "30",
             ["MONITOR_MAX_PATCHES_PER_RUN"] = "10",
             ["MONITOR_TASK_QUEUE"] = "custom-task-queue",
+            ["MONITOR_RUN_TIMEOUT_MINUTES"] = "45",
         });
 
         Assert.Equal("custom-schedule", options.ScheduleId);
@@ -70,6 +74,7 @@ public class MonitorOptionsTests
         Assert.Equal(TimeSpan.FromMinutes(30), options.CatchupWindow);
         Assert.Equal(10, options.MaxPatchesPerRun);
         Assert.Equal("custom-task-queue", options.TaskQueue);
+        Assert.Equal(TimeSpan.FromMinutes(45), options.RunTimeout);
     }
 
     [Theory]
@@ -85,11 +90,13 @@ public class MonitorOptionsTests
             ["MONITOR_INTERVAL_MINUTES"] = basura,
             ["MONITOR_CATCHUP_WINDOW_MINUTES"] = basura,
             ["MONITOR_MAX_PATCHES_PER_RUN"] = basura,
+            ["MONITOR_RUN_TIMEOUT_MINUTES"] = basura,
         });
 
         Assert.Equal(TimeSpan.FromMinutes(MonitorOptions.DefaultIntervalMinutes), options.Interval);
         Assert.Equal(TimeSpan.FromMinutes(MonitorOptions.DefaultCatchupWindowMinutes), options.CatchupWindow);
         Assert.Equal(MonitorOptions.DefaultMaxPatchesPerRun, options.MaxPatchesPerRun);
+        Assert.Equal(TimeSpan.FromMinutes(MonitorOptions.DefaultRunTimeoutMinutes), options.RunTimeout);
     }
 
     [Theory]

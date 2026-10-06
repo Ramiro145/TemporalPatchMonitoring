@@ -18,7 +18,8 @@ public class ScheduleBootstrapperTests
         TimeSpan.FromMinutes(MonitorOptions.DefaultIntervalMinutes),
         TimeSpan.FromMinutes(MonitorOptions.DefaultCatchupWindowMinutes),
         MonitorOptions.DefaultMaxPatchesPerRun,
-        "patch-monitor-task-queue");
+        "patch-monitor-task-queue",
+        TimeSpan.FromMinutes(MonitorOptions.DefaultRunTimeoutMinutes));
 
     [Fact]
     public void BuildSpec_da_un_unico_intervalo_de_5_minutos_con_los_defaults()

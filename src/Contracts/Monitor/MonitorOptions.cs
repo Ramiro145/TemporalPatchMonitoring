@@ -3,7 +3,8 @@ namespace Contracts.Monitor;
 /// <summary>
 /// Parámetros del Temporal Schedule que dispara <c>MonitorWorkflow</c> y de la pasada que este
 /// ejecuta en cada tick: el id del Schedule, cada cuánto dispara, la ventana de recuperación de
-/// ticks perdidos, el tope de patches procesados por corrida y la task queue donde corre. Los
+/// ticks perdidos, el tope de patches procesados por corrida, la task queue donde corre y el tope de
+/// ejecución de cada corrida (<see cref="RunTimeout"/>). Los
 /// valores salen de variables de entorno (ver <see cref="FromEnvironment"/>); un valor ausente,
 /// no numérico o no positivo cae al default sin lanzar, igual que
 /// <see cref="Discovery.DiscoveryOptions"/> y <see cref="Phase.PhaseOptions"/>.
@@ -13,7 +14,8 @@ public sealed record MonitorOptions(
     TimeSpan Interval,
     TimeSpan CatchupWindow,
     int MaxPatchesPerRun,
-    string TaskQueue)
+    string TaskQueue,
+    TimeSpan RunTimeout)
 {
     /// <summary>Id del Schedule por defecto cuando <c>MONITOR_SCHEDULE_ID</c> no está.</summary>
     public const string DefaultScheduleId = "patch-monitor-schedule";
@@ -28,10 +30,18 @@ public sealed record MonitorOptions(
     public const int DefaultMaxPatchesPerRun = 50;
 
     /// <summary>
+    /// Tope por defecto, en minutos, de ejecución de cada corrida (spec 18): tres intervalos por
+    /// defecto. Una corrida colgada (por ejemplo, un replay roto tras un deploy) se corta sola y
+    /// deja de bloquear los ticks que el Schedule salta con <c>Overlap = Skip</c>.
+    /// </summary>
+    public const int DefaultRunTimeoutMinutes = 15;
+
+    /// <summary>
     /// Lee <c>MONITOR_SCHEDULE_ID</c>, <c>MONITOR_INTERVAL_MINUTES</c>,
-    /// <c>MONITOR_CATCHUP_WINDOW_MINUTES</c>, <c>MONITOR_MAX_PATCHES_PER_RUN</c> y
-    /// <c>MONITOR_TASK_QUEUE</c>. Cualquiera que falte, no parsee como entero o no sea positiva
-    /// usa su default (<see cref="TaskQueues.PatchMonitor"/> para la task queue). Nunca lanza.
+    /// <c>MONITOR_CATCHUP_WINDOW_MINUTES</c>, <c>MONITOR_MAX_PATCHES_PER_RUN</c>,
+    /// <c>MONITOR_TASK_QUEUE</c> y <c>MONITOR_RUN_TIMEOUT_MINUTES</c>. Cualquiera que falte, no
+    /// parsee como entero o no sea positiva usa su default (<see cref="TaskQueues.PatchMonitor"/>
+    /// para la task queue). Nunca lanza.
     /// </summary>
     public static MonitorOptions FromEnvironment()
     {
@@ -46,7 +56,8 @@ public sealed record MonitorOptions(
             TimeSpan.FromMinutes(PositiveIntOrDefault("MONITOR_INTERVAL_MINUTES", DefaultIntervalMinutes)),
             TimeSpan.FromMinutes(PositiveIntOrDefault("MONITOR_CATCHUP_WINDOW_MINUTES", DefaultCatchupWindowMinutes)),
             PositiveIntOrDefault("MONITOR_MAX_PATCHES_PER_RUN", DefaultMaxPatchesPerRun),
-            taskQueue);
+            taskQueue,
+            TimeSpan.FromMinutes(PositiveIntOrDefault("MONITOR_RUN_TIMEOUT_MINUTES", DefaultRunTimeoutMinutes)));
     }
 
     private static int PositiveIntOrDefault(string variable, int fallback)

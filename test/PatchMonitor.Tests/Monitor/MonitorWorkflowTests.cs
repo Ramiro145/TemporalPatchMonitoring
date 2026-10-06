@@ -70,7 +70,8 @@ public class MonitorWorkflowTests
                 TimeSpan.FromMinutes(runConfig.IntervalMinutes),
                 TimeSpan.FromMinutes(MonitorOptions.DefaultCatchupWindowMinutes),
                 runConfig.MaxPatchesPerRun,
-                TaskQueues.PatchMonitor),
+                TaskQueues.PatchMonitor,
+                TimeSpan.FromMinutes(MonitorOptions.DefaultRunTimeoutMinutes)),
             new NotificationOptions(
                 runConfig.NotificationsEnabled,
                 WebhookUrl: null,
@@ -266,6 +267,47 @@ public class MonitorWorkflowTests
         Assert.Equal(0, second.NotificationsFailed);
         var afterSecond = (await store.GetStateAsync(key))!;
         Assert.Equal(afterSecond.Revision, afterSecond.NotifiedRevision);
+    }
+
+    // ── Spec 18: el rechazo permanente (4xx) atraviesa el CompositeNotifier sin reintentarse ──
+
+    [Fact]
+    public async Task Un_rechazo_no_reintentable_a_traves_del_compuesto_se_intenta_una_vez_y_no_reclama_la_revision()
+    {
+        var key = new Contracts.Domain.PatchKey("default", "OrderWorkflow", "core-patch");
+        var source = new FakeExecutionSource().Seed(
+            HistoryFixtures.OpenWithAttribute("core-patch", "OrderWorkflow"));
+        var store = new FakePatchStateStore();
+        var notifier = new FakeNotifier("webhook")
+        {
+            Throws = new ApplicationFailureException(
+                "El webhook rechazó la notificación con 400.", errorType: "WebhookRejected", nonRetryable: true),
+        };
+
+        var summary = await RunAsync(source, store, new INotifier[] { notifier });
+
+        // NotifierMaxAttempts es DefaultMaxAttempts (> 1): un solo intento prueba que no se reintentó.
+        Assert.True(NotificationOptions.DefaultMaxAttempts > 1);
+        Assert.Single(notifier.Calls);
+        Assert.Equal(1, summary.NotificationsFailed);
+        Assert.Equal(0, summary.NotificationsSent);
+        Assert.Contains(summary.Errors, e => e.Contains("(notificación)") && e.Contains("400"));
+        var state = (await store.GetStateAsync(key))!;
+        Assert.Equal(0, state.NotifiedRevision);
+        Assert.True(state.Revision > state.NotifiedRevision);
+    }
+
+    [Fact]
+    public async Task Un_fallo_reintentable_a_traves_del_compuesto_agota_los_intentos_de_la_activity()
+    {
+        var source = new FakeExecutionSource().Seed(
+            HistoryFixtures.OpenWithAttribute("core-patch", "OrderWorkflow"));
+        var notifier = new FakeNotifier("webhook", fails: true);
+
+        var summary = await RunAsync(source, new FakePatchStateStore(), new INotifier[] { notifier });
+
+        Assert.Equal(NotificationOptions.DefaultMaxAttempts, notifier.Calls.Count);
+        Assert.Equal(1, summary.NotificationsFailed);
     }
 
     [Fact]
