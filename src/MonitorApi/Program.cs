@@ -17,7 +17,8 @@ var taskQueue = Environment.GetEnvironmentVariable("MONITOR_TASK_QUEUE") ?? Task
 var targetNamespace = Environment.GetEnvironmentVariable("TARGET_TEMPORAL_NAMESPACE") ?? "default";
 
 // TemporalClient singleton. Se conecta de forma ansiosa (igual que el OrderApi del repo de
-// referencia); con depends_on: temporal + reintentos de ConnectAsync alcanza para el arranque.
+// referencia). ConnectAsync NO reintenta: si el cluster no está arriba, el proceso muere y
+// `restart: unless-stopped` (docker-compose.yml, spec 15 M-4) lo vuelve a levantar.
 var temporalClient = await TemporalClient.ConnectAsync(new TemporalClientConnectOptions
 {
     TargetHost = clusterOptions.Host,

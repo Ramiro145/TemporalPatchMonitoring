@@ -57,7 +57,9 @@ public sealed class PhaseResolver : IPhaseResolver
     /// y la inferencia puede volver a <c>Deprecated</c> sin ningún hecho nuevo. Si el estado
     /// durable ya estaba en <c>Clean</c> por inferencia (no por override) y ninguna ejecución con
     /// marker arrancó después de ese cambio, se conserva <c>Clean</c>. Una ejecución con marker
-    /// posterior (reintroducción real del patch) saca de <c>Clean</c> como siempre.
+    /// posterior (reintroducción real del patch) saca de <c>Clean</c> como siempre. Una ejecución
+    /// posterior sin leer (<see cref="MarkerPresence.Unknown"/>) tampoco permite conservarlo: la
+    /// fase pasa a <c>Unknown</c> (spec 18).
     /// </summary>
     private static PhaseResolution KeepCleanWithoutNewEvidence(
         PhaseResolution inferred, PatchDiscoveryResult result, PatchState? previous, DateTimeOffset now)
@@ -71,6 +73,18 @@ public sealed class PhaseResolver : IPhaseResolver
         if (result.Executions.Snapshots.Any(s => HasMarker(s) && s.StartTime > since))
         {
             return inferred;
+        }
+
+        // Spec 18: una ejecución posterior a la entrada a Clean que no se pudo leer (Unknown) podría
+        // traer el marker. Sin poder descartarlo, conservar Clean sería un "listo" sin evidencia:
+        // se responde "no sé". Un listado topeado sin ejecuciones Unknown posteriores no cuenta.
+        var unread = result.Executions.Snapshots.Count(s => s.Marker == MarkerPresence.Unknown && s.StartTime > since);
+        if (unread > 0)
+        {
+            return Inferred(
+                PatchPhase.Unknown,
+                $"no se puede confirmar Clean: {unread} ejecuciones posteriores a {since:o} sin leer",
+                now);
         }
 
         return Inferred(PatchPhase.Clean, $"se conserva Clean: sin markers nuevos desde {since:o}", now);

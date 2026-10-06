@@ -360,6 +360,66 @@ public class PhaseResolverTests
         Assert.Equal(PatchPhase.Clean, res.Phase);
     }
 
+    // ── Spec 18: Clean no se conserva con ejecuciones posteriores sin leer ─────
+
+    [Fact]
+    public void M6_una_ejecucion_Unknown_posterior_a_LastChangedAt_da_Unknown_con_el_motivo()
+    {
+        var changedAt = T0.AddDays(10);
+        var executions = WindowSlidWithP01()
+            .Append(Closed().Uninspected().StartedAt(changedAt.AddHours(1)))
+            .Append(Closed().Uninspected().StartedAt(changedAt.AddHours(2)))
+            .ToArray();
+
+        var res = Resolver(cleanGrace: Grace24h).Resolve(Of(executions), CleanState(changedAt));
+
+        Assert.Equal(PatchPhase.Unknown, res.Phase);
+        Assert.Equal(PhaseSource.Inferred, res.Source);
+        Assert.Contains("no se puede confirmar Clean", res.Reason);
+        Assert.Contains("2 ejecuciones", res.Reason);
+        Assert.Contains($"{changedAt:o}", res.Reason);
+    }
+
+    [Fact]
+    public void M6_una_ejecucion_Unknown_anterior_a_LastChangedAt_no_impide_conservar_Clean()
+    {
+        var changedAt = T0.AddDays(10);
+        var executions = WindowSlidWithP01()
+            .Append(Closed().Uninspected().StartedAt(changedAt.AddMinutes(-1)))
+            .ToArray();
+
+        var res = Resolver(cleanGrace: Grace24h).Resolve(Of(executions), CleanState(changedAt));
+
+        Assert.Equal(PatchPhase.Clean, res.Phase);
+        Assert.Contains("se conserva Clean", res.Reason);
+    }
+
+    [Fact]
+    public void M6_un_listado_truncado_sin_Unknown_posteriores_conserva_Clean()
+    {
+        var changedAt = T0.AddDays(10);
+        var discovery = SnapshotSetBuilder.New().With(WindowSlidWithP01()).Truncated().Build();
+
+        var res = Resolver(cleanGrace: Grace24h).Resolve(discovery, CleanState(changedAt));
+
+        Assert.Equal(PatchPhase.Clean, res.Phase);
+        Assert.Contains("se conserva Clean", res.Reason);
+    }
+
+    [Fact]
+    public void M6_un_marker_posterior_gana_sobre_una_ejecucion_Unknown_posterior()
+    {
+        var changedAt = T0.AddDays(10);
+        var executions = WindowSlidWithP01()
+            .Append(Closed().WithDeprecatedMarker().StartedAt(changedAt.AddDays(1)))
+            .Append(Closed().Uninspected().StartedAt(changedAt.AddDays(1)))
+            .ToArray();
+
+        var res = Resolver(cleanGrace: Grace24h).Resolve(Of(executions), CleanState(changedAt));
+
+        Assert.DoesNotContain("no se puede confirmar Clean", res.Reason);
+    }
+
     [Fact]
     public void M6_previous_con_Source_Override_no_activa_la_regla()
     {
